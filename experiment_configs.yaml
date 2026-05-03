@@ -1,0 +1,168 @@
+experiments:
+  weak_kth_pathological:
+    n: 10
+    k: 5
+    m: 5
+    T: 1_000_000
+    num_seeds: 10
+    delta: 0.05
+
+    algorithms:
+      - topk_uif
+      - rec_maxmin_ucb
+
+    instance:
+      kind: weak_kth
+      strong_value: 1.0
+      weak_optimal_value: 0.52
+      decoy_value: 0.50
+      tail_value: 0.15
+      num_decoys: 5
+      shuffle: true
+      seed: 123
+
+    output_dir: results/weak_kth_pathological
+    save_every: 1
+    recmaxmin_alpha: 0.51
+    allow_recmaxmin_topm_variant: false
+
+  weak_kth_easier:
+    n: 10
+    k: 3
+    m: 3
+    T: 1_000_000
+    num_seeds: 30
+    delta: 0.05
+
+    algorithms:
+      - topk_uif
+      - rec_maxmin_ucb
+
+    instance:
+      kind: weak_kth
+      strong_value: 1.0
+      weak_optimal_value: 0.65
+      decoy_value: 0.55
+      tail_value: 0.20
+      num_decoys: 7
+      shuffle: true
+      seed: 123
+
+    output_dir: results/weak_kth_easier
+
+  boundary_cloud:
+    n: 30
+    k: 5
+    m: 5
+    T: 5000
+    num_seeds: 20
+    delta: 0.05
+
+    algorithms:
+      - topk_uif
+      - rec_maxmin_ucb
+
+    instance:
+      kind: boundary_cloud
+      top_start: 1.0
+      boundary_value: 0.50
+      gap: 0.02
+      cloud_size: 20
+      tail_value: 0.15
+      shuffle: true
+      seed: 456
+
+    output_dir: results/boundary_cloud
+
+  explicit_toy:
+    n: 10
+    k: 3
+    m: 3
+    T: 2000
+    num_seeds: 10
+    delta: 0.05
+
+    algorithms:
+      - topk_uif
+      - rec_maxmin_ucb
+
+    instance:
+      kind: explicit
+      theta:
+        - 1.00
+        - 0.95
+        - 0.70
+        - 0.69
+        - 0.68
+        - 0.40
+        - 0.35
+        - 0.30
+        - 0.25
+        - 0.20
+
+    output_dir: results/explicit_toy
+
+  top1_feedback_only_my_algorithm:
+    n: 30
+    k: 5
+    m: 1
+    T: 5000
+    num_seeds: 20
+    delta: 0.05
+
+    algorithms:
+      - topk_uif
+      - uniform
+
+    instance:
+      kind: weak_kth
+      strong_value: 1.0
+      weak_optimal_value: 0.52
+      decoy_value: 0.50
+      tail_value: 0.15
+      num_decoys: 20
+      shuffle: true
+      seed: 123
+
+    output_dir: results/top1_feedback_only_my_algorithm
+
+  feedback_sensitivity_balanced:
+    n: 16
+    k: 6
+    m: 6
+    T: 1_000_000
+    num_seeds: 10
+    delta: 0.05
+
+    algorithms:
+      - topk_uif
+
+    instance:
+      kind: explicit
+      theta:
+        # 2 strong optimal arms
+        - 1.00
+        - 0.93
+
+        # 4 moderately weak optimal arms
+        - 0.82
+        - 0.78
+        - 0.74
+        - 0.70
+
+        # 6 decoys below the boundary
+        - 0.60
+        - 0.57
+        - 0.54
+        - 0.51
+        - 0.48
+        - 0.45
+
+        # 4 clearly bad tail arms
+        - 0.30
+        - 0.25
+        - 0.20
+        - 0.15
+
+    output_dir: results/feedback_sensitivity_balanced
+    save_every: 10

@@ -967,3 +967,522 @@ class RecMaxMinUCB(BaseAlgorithm):
             available.discard(arm)
 
         return tuple(chosen)
+    
+# ============================================================
+# MNL bandits with top-k objective
+# ============================================================
+
+class MNLTopKUIF(BaseAlgorithm):
+    """
+    MNL-TOP-k-UIF for MNL bandits with top-k objective.
+
+    Real arms are 0, ..., n - 1.
+    The no-choice fictitious item is represented internally as arm n.
+
+    The environment must return feedback.censored_ranks containing ranks for
+    every pulled real arm plus the no-choice item n. With MNL winner feedback:
+        winner rank = 1
+        all other items, including no-choice if not selected, have rank = 2.
+    """
+
+    def __init__(
+        self,
+        *,
+        n: int,
+        k: int,
+        T: int,
+        delta: float = 0.05,
+        seed: Optional[int] = None,
+        beta_fn: Optional[Callable[[float], float]] = None,
+        beta_scale: float = 1.0,
+        soft_guards: bool = True,
+    ) -> None:
+        if n < 2:
+            raise ValueError("n must be at least 2.")
+        if not (1 <= k <= n):
+            raise ValueError("Require 1 <= k <= n.")
+        if T < 1:
+            raise ValueError("T must be at least 1.")
+
+        self.n = int(n)
+        self.k = int(k)
+        self.T = int(T)
+        self.delta = float(delta)
+
+        self.no_choice = self.n
+        self.dim = self.n + 1
+
+        self.rng = np.random.default_rng(seed)
+        self.soft_guards = bool(soft_guards)
+
+        if beta_fn is not None:
+            self.beta_fn = beta_fn
+        else:
+            base_beta = default_beta(delta, n + 1, T)
+
+            def scaled_beta(N: float) -> float:
+                return beta_scale * base_beta(N)
+
+            self.beta_fn = scaled_beta
+
+        self.beta_scale = float(beta_scale)
+
+        self.t = 0
+        self.accepted: set[int] = set()
+        self.unknown: set[int] = set(range(self.n))
+
+        # MNL-TOP-k-UIF starts with the no-choice item as pivot.
+        self.pivot: int = self.no_choice
+
+        self.mu_hat = np.full((self.dim, self.dim), 0.5, dtype=float)
+        self.N = np.zeros((self.dim, self.dim), dtype=float)
+        np.fill_diagonal(self.N, np.inf)
+
+        self._last_action: Optional[tuple[int, ...]] = None
+        self._completed = False
+        self.invariant_violations: list[str] = []
+
+    def select_action(self) -> tuple[int, ...]:
+        if len(self.accepted) == self.k and len(self.unknown) == 0:
+            self._completed = True
+            action = tuple(sorted(self.accepted))
+            self._last_action = action
+            return action
+
+        if len(self.accepted) >= self.k:
+            action = tuple(sorted(self.accepted)[: self.k])
+            self._last_action = action
+            return action
+
+        pivot_set = set(self.accepted) | {self.pivot}
+        real_pivots = {p for p in pivot_set if p != self.no_choice}
+
+        # Algorithm 3:
+        # |S_exp| = k - |P_t| + I[no-choice in P_t]
+        num_to_sample = self.k - len(pivot_set) + int(self.no_choice in pivot_set)
+
+        candidates = set(self.unknown)
+        if self.pivot != self.no_choice:
+            candidates.discard(self.pivot)
+        candidates = sorted(candidates)
+
+        if len(candidates) >= num_to_sample:
+            sampled = self._sample_without_replacement(candidates, num_to_sample)
+            action_set = real_pivots | set(sampled)
+        else:
+            self.invariant_violations.append(
+                f"t={self.t}: not enough candidates, need {num_to_sample}, "
+                f"have {len(candidates)}."
+            )
+            action_set = set(real_pivots) | set(candidates)
+            remaining = [i for i in range(self.n) if i not in action_set]
+            extra = self._sample_without_replacement(
+                remaining,
+                self.k - len(action_set),
+            )
+            action_set.update(extra)
+
+        action = tuple(sorted(action_set))
+
+        if len(action) != self.k:
+            raise RuntimeError(
+                f"MNLTopKUIF selected {len(action)} arms instead of k={self.k}: {action}"
+            )
+
+        self._last_action = action
+        return action
+
+    def update(self, result: RoundResultProtocol) -> None:
+        pulled_arms = tuple(int(i) for i in result.pulled_arms)
+        pulled_set = set(pulled_arms)
+
+        ranks = dict(result.feedback.censored_ranks)
+        full_items = pulled_set | {self.no_choice}
+
+        if len(pulled_set) != self.k:
+            raise ValueError(f"Expected exactly k={self.k} real pulled arms.")
+        if set(ranks.keys()) != full_items:
+            raise ValueError(
+                "MNL feedback must contain ranks for pulled arms plus no-choice arm n."
+            )
+
+        self.t += 1
+
+        old_accepted = set(self.accepted)
+        old_unknown = set(self.unknown)
+        old_pivot = int(self.pivot)
+
+        pivot_set = old_accepted | {old_pivot}
+
+        self._rb_update(
+            pivot_set=pivot_set,
+            items=full_items,
+            censored_ranks=ranks,
+        )
+
+        A_count, B_count = self._count_ba(
+            pivot_set=pivot_set,
+            unknown_arms=sorted(old_unknown),
+        )
+
+        reject_threshold = self.k - len(old_accepted)
+        accept_threshold = len(old_accepted | old_unknown) - self.k
+
+        reject_candidates: set[int] = set()
+        accept_candidates: set[int] = set()
+
+        for i in old_unknown:
+            if B_count[i] >= reject_threshold:
+                reject_candidates.add(i)
+            elif A_count[i] >= accept_threshold:
+                accept_candidates.add(i)
+
+        new_accepted = set(old_accepted)
+        new_unknown = set(old_unknown)
+
+        if self.soft_guards:
+            max_rejections = max(0, len(new_accepted | new_unknown) - self.k)
+            if len(reject_candidates) > max_rejections:
+                reject_candidates = set(
+                    self.rng.choice(
+                        sorted(reject_candidates),
+                        size=max_rejections,
+                        replace=False,
+                    )
+                )
+
+        new_unknown -= reject_candidates
+
+        accept_candidates &= new_unknown
+
+        if self.soft_guards:
+            available_slots = max(0, self.k - len(new_accepted))
+            if len(accept_candidates) > available_slots:
+                accept_candidates = set(
+                    self.rng.choice(
+                        sorted(accept_candidates),
+                        size=available_slots,
+                        replace=False,
+                    )
+                )
+
+        new_accepted |= accept_candidates
+        new_unknown -= accept_candidates
+
+        new_pivot = old_pivot
+
+        # Branch condition uses old A_t.
+        if len(old_accepted) != 0:
+            pivot_accept_candidates = {
+                i
+                for i in old_unknown
+                if i in new_unknown and self.lcb(old_pivot, i) > 0.5
+            }
+
+            if self.soft_guards:
+                available_slots = max(0, self.k - len(new_accepted))
+                if len(pivot_accept_candidates) > available_slots:
+                    pivot_accept_candidates = set(
+                        self.rng.choice(
+                            sorted(pivot_accept_candidates),
+                            size=available_slots,
+                            replace=False,
+                        )
+                    )
+
+            new_accepted |= pivot_accept_candidates
+            new_unknown -= pivot_accept_candidates
+
+        else:
+            candidate = self._new_pivot(
+                pivot=old_pivot,
+                unknown_arms=sorted(new_unknown),
+            )
+            if candidate is not None:
+                new_pivot = candidate
+
+        self.accepted = new_accepted
+        self.unknown = new_unknown
+        self.pivot = int(new_pivot)
+        self._completed = len(self.accepted) == self.k and len(self.unknown) == 0
+
+    def ucb(self, pivot: int, arm: int) -> float:
+        return float(self.mu_hat[pivot, arm] + self.beta_fn(self.N[pivot, arm]))
+
+    def lcb(self, pivot: int, arm: int) -> float:
+        return float(self.mu_hat[pivot, arm] - self.beta_fn(self.N[pivot, arm]))
+
+    def state(self) -> AlgorithmState:
+        return AlgorithmState(
+            t=self.t,
+            accepted=tuple(sorted(self.accepted)),
+            unknown=tuple(sorted(self.unknown)),
+            pivot=int(self.pivot),
+            completed=bool(self._completed),
+        )
+
+    def diagnostics(self) -> dict:
+        return {
+            "num_invariant_violations": len(self.invariant_violations),
+            "last_invariant_violations": self.invariant_violations[-10:],
+        }
+
+    def diagnostic_tables(self) -> dict[str, np.ndarray]:
+        return {
+            "mu_hat": self.mu_hat.copy(),
+            "N": self.N.copy(),
+        }
+
+    def _rb_update(
+        self,
+        *,
+        pivot_set: Iterable[int],
+        items: Iterable[int],
+        censored_ranks: dict[int, int],
+    ) -> None:
+        for p in pivot_set:
+            p = int(p)
+            rank_p = censored_ranks[p]
+
+            for i in items:
+                i = int(i)
+                rank_i = censored_ranks[i]
+
+                if rank_p != rank_i:
+                    old_N = self.N[p, i]
+                    new_N = old_N + 1.0
+
+                    indicator = 1.0 if rank_i < rank_p else 0.0
+
+                    self.mu_hat[p, i] = (
+                        ((new_N - 1.0) / new_N) * self.mu_hat[p, i]
+                        + indicator / new_N
+                    )
+                    self.N[p, i] = new_N
+
+    def _count_ba(
+        self,
+        *,
+        pivot_set: Iterable[int],
+        unknown_arms: Iterable[int],
+    ) -> tuple[dict[int, int], dict[int, int]]:
+        pivots = tuple(int(p) for p in pivot_set)
+        unknown = tuple(int(i) for i in unknown_arms)
+
+        A_count = {i: 0 for i in unknown}
+        B_count = {i: 0 for i in unknown}
+
+        for i in unknown:
+            for j in unknown:
+                if any(self.ucb(p, i) < self.lcb(p, j) for p in pivots):
+                    B_count[i] += 1
+
+                if any(self.lcb(p, i) > self.ucb(p, j) for p in pivots):
+                    A_count[i] += 1
+
+        return A_count, B_count
+
+    def _new_pivot(
+        self,
+        *,
+        pivot: int,
+        unknown_arms: Iterable[int],
+    ) -> Optional[int]:
+        candidates = [
+            int(i)
+            for i in unknown_arms
+            if self.lcb(int(pivot), int(i)) > 0.5
+        ]
+
+        if not candidates:
+            return None
+
+        scores = np.asarray([self.lcb(pivot, i) for i in candidates], dtype=float)
+        max_score = np.max(scores)
+
+        best = [
+            arm
+            for arm, score in zip(candidates, scores)
+            if np.isclose(score, max_score)
+        ]
+
+        return int(self.rng.choice(best))
+
+    def _sample_without_replacement(
+        self,
+        candidates: list[int],
+        size: int,
+    ) -> tuple[int, ...]:
+        if size < 0:
+            raise ValueError("Cannot sample a negative number of arms.")
+        if size == 0:
+            return tuple()
+        if len(candidates) < size:
+            raise ValueError(
+                f"Cannot sample {size} items from only {len(candidates)} candidates."
+            )
+
+        sampled = self.rng.choice(candidates, size=size, replace=False)
+        return tuple(int(i) for i in sampled)
+
+
+class SahaGaillardMNLTopK(BaseAlgorithm):
+    """
+    Saha-Gaillard style AOA-RBPL baseline for MNL bandits with top-k objective.
+
+    Real arms are 0, ..., n - 1.
+    The no-choice item is represented internally as arm n.
+
+    adaptive=False:
+        AOA-RBPL with no-choice pivot:
+            theta_i^ucb = gamma_i0^ucb
+
+    adaptive=True:
+        AOA-RBPL-Adaptive:
+            theta_i^ucb = min_j gamma_ij^ucb gamma_j0^ucb
+    """
+
+    def __init__(
+        self,
+        *,
+        n: int,
+        k: int,
+        T: int,
+        x: Optional[float] = None,
+        x_scale: float = 2.0,
+        adaptive: bool = True,
+        seed: Optional[int] = None,
+        eps: float = 1e-12,
+    ) -> None:
+        if n < 2:
+            raise ValueError("n must be at least 2.")
+        if not (1 <= k <= n):
+            raise ValueError("Require 1 <= k <= n.")
+        if T < 1:
+            raise ValueError("T must be at least 1.")
+
+        self.n = int(n)
+        self.k = int(k)
+        self.T = int(T)
+
+        self.no_choice = self.n
+        self.dim = self.n + 1
+
+        self.adaptive = bool(adaptive)
+        self.eps = float(eps)
+        self.x = float(x) if x is not None else float(x_scale * np.log(max(T, 2)))
+
+        self.rng = np.random.default_rng(seed)
+
+        self.t = 0
+        self.W = np.zeros((self.dim, self.dim), dtype=float)
+
+        self._last_action: Optional[tuple[int, ...]] = None
+        self._last_theta_ucb = np.full(self.n, np.inf, dtype=float)
+
+    def select_action(self) -> tuple[int, ...]:
+        theta_ucb = self._theta_ucb()
+        self._last_theta_ucb = theta_ucb.copy()
+
+        # Random tie-breaking that works even when theta_ucb is huge.
+        perm = self.rng.permutation(self.n)
+        order_in_perm = np.argsort(-theta_ucb[perm], kind="stable")
+        order = perm[order_in_perm]
+
+        action = tuple(sorted(int(i) for i in order[: self.k]))
+
+        self._last_action = action
+        return action
+
+    def update(self, result: RoundResultProtocol) -> None:
+        pulled = tuple(int(i) for i in result.pulled_arms)
+        ranks = dict(result.feedback.censored_ranks)
+
+        outcome_set = set(pulled) | {self.no_choice}
+
+        if len(set(pulled)) != self.k:
+            raise ValueError(f"Expected exactly k={self.k} real pulled arms.")
+        if set(ranks.keys()) != outcome_set:
+            raise ValueError(
+                "MNL feedback must contain ranks for pulled arms plus no-choice arm n."
+            )
+
+        winners = [arm for arm, rank in ranks.items() if rank == 1]
+        if len(winners) != 1:
+            raise ValueError(f"Expected exactly one winner, got {winners}.")
+
+        winner = int(winners[0])
+
+        # Rank-breaking winner feedback:
+        # the selected item beats all other items in S union {no-choice}.
+        for loser in outcome_set:
+            loser = int(loser)
+            if loser != winner:
+                self.W[winner, loser] += 1.0
+
+        self.t += 1
+
+    def state(self) -> AlgorithmState:
+        if self._last_action is None:
+            action = self.select_action()
+        else:
+            action = self._last_action
+
+        return AlgorithmState(
+            t=self.t,
+            accepted=tuple(sorted(action)),
+            unknown=tuple(sorted(set(range(self.n)) - set(action))),
+            pivot=-1,
+            completed=False,
+        )
+
+    def diagnostic_tables(self) -> dict[str, np.ndarray]:
+        return {
+            "W": self.W.copy(),
+            "N": (self.W + self.W.T).copy(),
+            "theta_ucb": self._last_theta_ucb.copy(),
+        }
+
+    def _p_hat_and_ucb(self) -> tuple[np.ndarray, np.ndarray]:
+        N = self.W + self.W.T
+
+        p_hat = np.full((self.dim, self.dim), 0.5, dtype=float)
+        mask = N > 0
+        p_hat[mask] = self.W[mask] / N[mask]
+        np.fill_diagonal(p_hat, 0.5)
+
+        p_ucb = np.empty((self.dim, self.dim), dtype=float)
+
+        # Unobserved pairs are maximally optimistic.
+        p_ucb[~mask] = 1.0 - self.eps
+
+        ph = p_hat[mask]
+        Nm = N[mask]
+        bonus = np.sqrt(2.0 * ph * (1.0 - ph) * self.x / Nm) + 3.0 * self.x / Nm
+        p_ucb[mask] = ph + bonus
+
+        p_ucb = np.clip(p_ucb, self.eps, 1.0 - self.eps)
+        np.fill_diagonal(p_ucb, 0.5)
+
+        return p_hat, p_ucb
+
+    def _gamma_ucb(self) -> np.ndarray:
+        _, p_ucb = self._p_hat_and_ucb()
+
+        gamma = p_ucb / np.maximum(1.0 - p_ucb, self.eps)
+        np.fill_diagonal(gamma, 1.0)
+        return gamma
+
+    def _theta_ucb(self) -> np.ndarray:
+        gamma = self._gamma_ucb()
+
+        if not self.adaptive:
+            return gamma[: self.n, self.no_choice].copy()
+
+        gamma_to_no_choice = gamma[:, self.no_choice]
+        theta_ucb = np.empty(self.n, dtype=float)
+
+        for i in range(self.n):
+            theta_ucb[i] = float(np.min(gamma[i, :] * gamma_to_no_choice))
+
+        return theta_ucb

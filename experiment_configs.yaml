@@ -166,3 +166,63 @@ experiments:
 
     output_dir: results/feedback_sensitivity_balanced
     save_every: 10
+
+  mnl_topk_theta0_sweep:
+    task: mnl_topk
+    n: 30
+    k: 5
+    T: 100000
+    num_seeds: 10
+    delta: 0.05
+
+    algorithms:
+      - mnl_topk_uif
+      - sg_adaptive
+      - sg_no_choice
+
+    # Sweep the no-choice parameter.
+    # Smaller theta0 means no-choice is rarely selected.
+    theta0_values:
+      - 1.0
+      - 0.1
+      - 0.01
+      - 0.001
+
+    sg_x_scale: 2.0
+
+    instance:
+      kind: explicit
+      theta:
+        - 1.00
+        - 0.95
+        - 0.90
+        - 0.85
+        - 0.80
+        - 0.65
+        - 0.62
+        - 0.59
+        - 0.56
+        - 0.53
+        - 0.50
+        - 0.47
+        - 0.44
+        - 0.41
+        - 0.38
+        - 0.35
+        - 0.32
+        - 0.29
+        - 0.26
+        - 0.23
+        - 0.20
+        - 0.18
+        - 0.16
+        - 0.14
+        - 0.12
+        - 0.10
+        - 0.08
+        - 0.06
+        - 0.04
+        - 0.02
+
+    output_dir: results/mnl_topk_theta0_sweep
+    save_every: 100

@@ -262,6 +262,209 @@ PDF plots are saved in:
 
 ```text
 results/<experiment_name>/pdf_plots/
+
+```
+
+## MNL top-k experiments
+
+The repository also supports MNL bandit experiments with a no-choice item. These experiments compare:
+
+```text
+mnl_topk_uif    MNL version of TOP-k-UIF
+sg_adaptive     Saha-Gaillard adaptive-pivot baseline
+sg_no_choice    Saha-Gaillard no-choice-pivot baseline
+```
+
+A typical YAML config is:
+
+```yaml
+experiments:
+  mnl_topk_theta0_sweep:
+    task: mnl_topk
+    n: 30
+    k: 5
+    T: 100000
+    num_seeds: 20
+    delta: 0.05
+
+    algorithms:
+      - mnl_topk_uif
+      - sg_adaptive
+      - sg_no_choice
+
+    theta0_values:
+      - 1.0
+      - 0.1
+      - 0.01
+      - 0.001
+
+    topk_uif_beta_scale: 0.1
+    sg_x_scale: 2.0
+
+    instance:
+      kind: explicit
+      theta:
+        - 1.00
+        - 0.95
+        - 0.90
+        - 0.85
+        - 0.80
+        - 0.65
+        - 0.62
+        - 0.59
+        - 0.56
+        - 0.53
+        - 0.50
+        - 0.47
+        - 0.44
+        - 0.41
+        - 0.38
+        - 0.35
+        - 0.32
+        - 0.29
+        - 0.26
+        - 0.23
+        - 0.20
+        - 0.18
+        - 0.16
+        - 0.14
+        - 0.12
+        - 0.10
+        - 0.08
+        - 0.06
+        - 0.04
+        - 0.02
+
+    output_dir: results/mnl_topk_theta0_sweep
+    save_every: 100
+```
+
+### Meaning of the MNL fields
+
+`task: mnl_topk` tells the code to run the MNL top-k experiment.
+
+`theta0_values` is the list of no-choice parameters to test. Smaller values mean the no-choice option is selected less often.
+
+```yaml
+theta0_values:
+  - 1.0
+  - 0.1
+  - 0.01
+  - 0.001
+```
+
+`topk_uif_beta_scale` rescales the confidence radius of `mnl_topk_uif`. Smaller values make the algorithm less conservative.
+
+```yaml
+topk_uif_beta_scale: 0.1
+```
+
+`sg_x_scale` controls the exploration parameter used by the Saha-Gaillard baselines. The code uses approximately:
+
+```text
+x = sg_x_scale * log(T)
+```
+
+Typical value:
+
+```yaml
+sg_x_scale: 2.0
+```
+
+### Run the MNL experiment
+
+```bash
+python mnl_experiments.py --name mnl_topk_theta0_sweep
+```
+
+Use a different config file:
+
+```bash
+python mnl_experiments.py --config my_experiments.yaml --name mnl_topk_theta0_sweep
+```
+
+For large horizons, downsample the plotted curves:
+
+```bash
+python mnl_experiments.py --name mnl_topk_theta0_sweep --stride 1000
+```
+
+The results are saved in:
+
+```text
+results/mnl_topk_theta0_sweep/
+```
+
+The PDF plots are saved in:
+
+```text
+results/mnl_topk_theta0_sweep/pdf_plots/
+```
+
+Typical generated plots are:
+
+```text
+cumulative_regret_theta0_1.pdf
+cumulative_regret_theta0_0.1.pdf
+cumulative_regret_theta0_0.01.pdf
+cumulative_regret_theta0_0.001.pdf
+instantaneous_regret_theta0_1.pdf
+instantaneous_regret_theta0_0.1.pdf
+instantaneous_regret_theta0_0.01.pdf
+instantaneous_regret_theta0_0.001.pdf
+final_regret_vs_theta0.pdf
+tail_instantaneous_regret_vs_theta0.pdf
+last_action_success_vs_theta0.pdf
+```
+
+### Recommended commands
+
+Run the full theta0 sweep:
+
+```bash
+python mnl_experiments.py --name mnl_topk_theta0_sweep --stride 1000
+```
+
+Run only one no-choice value by editing the YAML:
+
+```yaml
+theta0_values:
+  - 0.01
+```
+
+Then run:
+
+```bash
+python mnl_experiments.py --name mnl_topk_theta0_sweep --stride 1000
+```
+
+Compare only the two Saha-Gaillard baselines by editing the YAML:
+
+```yaml
+algorithms:
+  - sg_adaptive
+  - sg_no_choice
+```
+
+Compare only MNL-TOP-k-UIF with the adaptive baseline:
+
+```yaml
+algorithms:
+  - mnl_topk_uif
+  - sg_adaptive
+```
+
+### Interpreting the MNL experiment
+
+When `theta0 = 1`, the no-choice item is not rare, so `sg_adaptive` and `sg_no_choice` may behave similarly.
+
+When `theta0` is small, no-choice is rarely selected. In this regime, `sg_no_choice` can perform poorly because it estimates every arm through direct comparisons with no-choice. The adaptive baseline should improve by using intermediate pivots, while `mnl_topk_uif` explicitly changes the played set to move away from the no-choice pivot.
+
+The most important plots are:
+
+```text
+final_regret_vs_theta0.pdf
+tail_instantaneous_regret_vs_theta0.pdf
 ```
 
 ## Output files

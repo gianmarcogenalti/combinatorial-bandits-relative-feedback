@@ -171,8 +171,8 @@ experiments:
     task: mnl_topk
     n: 30
     k: 5
-    T: 100000
-    num_seeds: 10
+    T: 1_000_000
+    num_seeds: 30
     delta: 0.05
 
     algorithms:

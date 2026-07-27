@@ -51,6 +51,49 @@ def default_beta(delta: float, n: int, T: int) -> Callable[[float], float]:
     return beta
 
 
+def _transitive_closure_counts(
+    *,
+    items: tuple[int, ...],
+    direct_precedes: Callable[[int, int], bool],
+) -> tuple[dict[int, int], dict[int, int]]:
+    """
+    Given a finite set of items and a direct (possibly non-transitive)
+    relation `direct_precedes(i, j)` meaning "i precedes j", computes for
+    each item i:
+        A_i = |{j : i precedes^+ j}|  (reachable forward, transitive closure)
+        B_i = |{j : j precedes^+ i}|  (reachable backward, transitive closure)
+    via a DFS-based reachability computation from every node, i.e. the
+    transitive closure of the direct relation. Runs in O(n^3).
+    """
+    n_items = len(items)
+    direct = [[False] * n_items for _ in range(n_items)]
+
+    for a, i in enumerate(items):
+        for b, j in enumerate(items):
+            if a != b and direct_precedes(i, j):
+                direct[a][b] = True
+
+    def reachable_from(start: int, edges: list[list[bool]]) -> int:
+        visited = [False] * n_items
+        stack = [start]
+        visited[start] = True
+        while stack:
+            u = stack.pop()
+            for v in range(n_items):
+                if edges[u][v] and not visited[v]:
+                    visited[v] = True
+                    stack.append(v)
+        visited[start] = False
+        return sum(visited)
+
+    A_count = {items[a]: reachable_from(a, direct) for a in range(n_items)}
+
+    reversed_edges = [[direct[b][a] for b in range(n_items)] for a in range(n_items)]
+    B_count = {items[a]: reachable_from(a, reversed_edges) for a in range(n_items)}
+
+    return A_count, B_count
+
+
 @dataclass(frozen=True)
 class AlgorithmState:
     """
@@ -326,9 +369,11 @@ class TopKUIF(BaseAlgorithm):
             new_unknown -= pivot_accept_candidates
 
         else:
+            # New-Pivot is invoked on U_t (old_unknown), not U_{t+1}, consistently
+            # with all the other routine invocations (rebuttal fix).
             candidate = self._new_pivot(
                 pivot=old_pivot,
-                unknown_arms=sorted(new_unknown),
+                unknown_arms=sorted(old_unknown),
             )
             if candidate is not None:
                 new_pivot = candidate
@@ -414,27 +459,24 @@ class TopKUIF(BaseAlgorithm):
         pivot_set: Iterable[int],
         unknown_arms: Iterable[int],
     ) -> tuple[dict[int, int], dict[int, int]]:
+        """
+        Computes A_i, B_i from the transitive closure of the relation
+        i \\prec j iff LCB_i^(p) > UCB_j^(p) for some pivot p.
+
+        Rebuttal fix: witnessing pivots may differ across comparisons, so
+        \\prec is not obviously transitive. We build the graph induced by the
+        (single-pivot) direct relation and compute A_i/B_i via reachability
+        (i.e. the transitive closure \\prec^+), rather than from \\prec directly.
+        """
         pivots = tuple(int(p) for p in pivot_set)
         unknown = tuple(int(i) for i in unknown_arms)
 
-        A_count = {i: 0 for i in unknown}
-        B_count = {i: 0 for i in unknown}
-
-        for i in unknown:
-            for j in unknown:
-                i_loses_to_j = any(
-                    self.ucb(p, i) < self.lcb(p, j)
-                    for p in pivots
-                )
-                if i_loses_to_j:
-                    B_count[i] += 1
-
-                i_beats_j = any(
-                    self.lcb(p, i) > self.ucb(p, j)
-                    for p in pivots
-                )
-                if i_beats_j:
-                    A_count[i] += 1
+        A_count, B_count = _transitive_closure_counts(
+            items=unknown,
+            direct_precedes=lambda i, j: any(
+                self.lcb(p, i) > self.ucb(p, j) for p in pivots
+            ),
+        )
 
         return A_count, B_count
 
@@ -1194,9 +1236,11 @@ class MNLTopKUIF(BaseAlgorithm):
             new_unknown -= pivot_accept_candidates
 
         else:
+            # New-Pivot is invoked on U_t (old_unknown), not U_{t+1}, consistently
+            # with all the other routine invocations (rebuttal fix).
             candidate = self._new_pivot(
                 pivot=old_pivot,
-                unknown_arms=sorted(new_unknown),
+                unknown_arms=sorted(old_unknown),
             )
             if candidate is not None:
                 new_pivot = candidate
@@ -1269,16 +1313,12 @@ class MNLTopKUIF(BaseAlgorithm):
         pivots = tuple(int(p) for p in pivot_set)
         unknown = tuple(int(i) for i in unknown_arms)
 
-        A_count = {i: 0 for i in unknown}
-        B_count = {i: 0 for i in unknown}
-
-        for i in unknown:
-            for j in unknown:
-                if any(self.ucb(p, i) < self.lcb(p, j) for p in pivots):
-                    B_count[i] += 1
-
-                if any(self.lcb(p, i) > self.ucb(p, j) for p in pivots):
-                    A_count[i] += 1
+        A_count, B_count = _transitive_closure_counts(
+            items=unknown,
+            direct_precedes=lambda i, j: any(
+                self.lcb(p, i) > self.ucb(p, j) for p in pivots
+            ),
+        )
 
         return A_count, B_count
 

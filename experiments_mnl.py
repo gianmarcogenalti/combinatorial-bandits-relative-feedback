@@ -11,8 +11,36 @@ from typing import Any, Optional
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+from tqdm.auto import tqdm
 
 from algorithms import MNLTopKUIF, SahaGaillardMNLTopK, UniformRandomTopK
+
+
+# Shared bar layout so progress bars render consistently and fit inside
+# common terminal widths. dynamic_ncols keeps it responsive to resizes; the
+# explicit bar_format keeps it compact (no verbose rate units).
+TQDM_BAR_FORMAT = (
+    "{desc} {percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}{postfix}]"
+)
+
+
+def make_pbar(*, total: int, desc: str, leave: bool = True, unit: str = "it", unit_scale: bool = False):
+    return tqdm(
+        total=total,
+        desc=desc,
+        leave=leave,
+        dynamic_ncols=True,
+        bar_format=TQDM_BAR_FORMAT,
+        unit=unit,
+        unit_scale=unit_scale,
+        mininterval=0.2,
+    )
+
+
+def _truncate(text: str, width: int) -> str:
+    if len(text) <= width:
+        return text
+    return text[: max(1, width - 1)] + "…"
 
 
 @dataclass(frozen=True)
@@ -299,6 +327,7 @@ def run_single_seed(
     theta0: float,
     config: MNLExperimentConfig,
     seed: int,
+    show_progress: bool = True,
 ) -> tuple[pd.DataFrame, dict[str, Any]]:
     env = MNLTopKEnv(
         theta=theta,
@@ -320,36 +349,57 @@ def run_single_seed(
     rows = []
     true_top_k = set(env.top_k_arms)
 
-    for _ in range(config.T):
-        action = algo.select_action()
-        result = env.step(action)
-        algo.update(result)
+    postfix_every = max(1, config.T // 200)
 
-        state = algo.state()
-        action_set = set(action)
+    desc = _truncate(f"{algorithm_name} theta0={theta0:g} seed={seed:03d}", 28)
+    pbar = (
+        make_pbar(total=config.T, desc=desc, leave=False, unit="rd", unit_scale=True)
+        if show_progress
+        else None
+    )
 
-        if result.t % config.save_every == 0 or result.t == config.T:
-            rows.append(
-                {
-                    "experiment": config.name,
-                    "theta0": theta0,
-                    "algorithm": algorithm_name,
-                    "seed": seed,
-                    "round": result.t,
-                    "instantaneous_regret": result.instantaneous_regret,
-                    "cumulative_regret": result.cumulative_regret,
-                    "expected_reward": result.expected_reward,
-                    "winner": result.feedback.winner,
-                    "no_choice_selected": result.feedback.winner == env.no_choice,
-                    "accepted_size": len(state.accepted),
-                    "unknown_size": len(state.unknown),
-                    "completed": state.completed,
-                    "pivot": state.pivot,
-                    "action_correct": action_set == true_top_k,
-                    "action_precision": len(action_set & true_top_k) / len(action_set),
-                    "action_recall": len(action_set & true_top_k) / len(true_top_k),
-                }
-            )
+    try:
+        for t in range(1, config.T + 1):
+            action = algo.select_action()
+            result = env.step(action)
+            algo.update(result)
+
+            state = algo.state()
+            action_set = set(action)
+
+            if result.t % config.save_every == 0 or result.t == config.T:
+                rows.append(
+                    {
+                        "experiment": config.name,
+                        "theta0": theta0,
+                        "algorithm": algorithm_name,
+                        "seed": seed,
+                        "round": result.t,
+                        "instantaneous_regret": result.instantaneous_regret,
+                        "cumulative_regret": result.cumulative_regret,
+                        "expected_reward": result.expected_reward,
+                        "winner": result.feedback.winner,
+                        "no_choice_selected": result.feedback.winner == env.no_choice,
+                        "accepted_size": len(state.accepted),
+                        "unknown_size": len(state.unknown),
+                        "completed": state.completed,
+                        "pivot": state.pivot,
+                        "action_correct": action_set == true_top_k,
+                        "action_precision": len(action_set & true_top_k) / len(action_set),
+                        "action_recall": len(action_set & true_top_k) / len(true_top_k),
+                    }
+                )
+
+            if pbar is not None:
+                pbar.update(1)
+                if t % postfix_every == 0 or t == config.T:
+                    pbar.set_postfix(
+                        {"regret": f"{result.cumulative_regret:.1f}"},
+                        refresh=False,
+                    )
+    finally:
+        if pbar is not None:
+            pbar.close()
 
     history_df = pd.DataFrame(rows)
 
@@ -410,26 +460,34 @@ def run_experiment(config: MNLExperimentConfig) -> tuple[pd.DataFrame, pd.DataFr
     histories = []
     summaries = []
 
-    for theta0 in theta0_values:
-        for algorithm_name in config.algorithms:
-            for seed in range(config.num_seeds):
-                hist, summ = run_single_seed(
-                    algorithm_name=algorithm_name,
-                    theta=theta,
-                    theta0=float(theta0),
-                    config=config,
-                    seed=seed,
-                )
+    total_runs = len(theta0_values) * len(config.algorithms) * config.num_seeds
+    outer = make_pbar(total=total_runs, desc=_truncate(config.name, 28), unit="run")
 
-                histories.append(hist)
-                summaries.append(summ)
+    try:
+        for theta0 in theta0_values:
+            for algorithm_name in config.algorithms:
+                for seed in range(config.num_seeds):
+                    hist, summ = run_single_seed(
+                        algorithm_name=algorithm_name,
+                        theta=theta,
+                        theta0=float(theta0),
+                        config=config,
+                        seed=seed,
+                    )
 
-                print(
-                    f"theta0={theta0:<8g} {algorithm_name:14s} seed={seed:03d} "
-                    f"regret={summ['final_cumulative_regret']:.4f} "
-                    f"last_correct={summ['last_action_correct']} "
-                    f"tail_regret={summ['tail_mean_instantaneous_regret']:.5f}"
-                )
+                    histories.append(hist)
+                    summaries.append(summ)
+
+                    tqdm.write(
+                        f"theta0={theta0:<8g} {algorithm_name:14s} seed={seed:03d} "
+                        f"regret={summ['final_cumulative_regret']:.4f} "
+                        f"last_correct={summ['last_action_correct']} "
+                        f"tail_regret={summ['tail_mean_instantaneous_regret']:.5f}"
+                    )
+
+                    outer.update(1)
+    finally:
+        outer.close()
 
     return pd.concat(histories, ignore_index=True), pd.DataFrame(summaries), theta
 

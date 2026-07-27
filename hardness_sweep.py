@@ -20,9 +20,10 @@ from __future__ import annotations
 
 import argparse
 import json
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import asdict, replace
 from pathlib import Path
-from typing import Iterable, Optional, Sequence
+from typing import Any, Iterable, Optional, Sequence
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -161,6 +162,34 @@ def plot_final_regret_vs_delta_min_boxplot(
 # Core sweep
 # ============================================================
 
+def _run_one_job(job: dict[str, Any]) -> tuple[pd.DataFrame, dict]:
+    """
+    Runs a single (gap, algorithm, seed) job. Module-level (not a closure) so
+    it can be pickled and sent to worker processes by ProcessPoolExecutor.
+    Progress is reported at the job level by the caller, not per-round, since
+    per-round tqdm bars from multiple processes would interleave on screen.
+    """
+    history_df, summary = run_single_seed(
+        algorithm_name=job["algorithm_name"],
+        theta=job["theta"],
+        config=job["sweep_config"],
+        seed=job["seed"],
+        show_progress=False,
+    )
+
+    history_df = history_df.copy()
+    history_df["delta_min"] = job["gap"]
+
+    summary = add_completion_and_tail_metrics(
+        history_df=history_df,
+        summary=summary,
+        T=job["sweep_config"].T,
+    )
+    summary["delta_min"] = job["gap"]
+
+    return history_df, summary
+
+
 def run_hardness_sweep(
     *,
     base_config: ExperimentConfig,
@@ -168,73 +197,83 @@ def run_hardness_sweep(
     output_dir: Path,
     top_value: float = 1.0,
     tail_value: Optional[float] = None,
+    n_jobs: int = 1,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
-    histories: list[pd.DataFrame] = []
-    summaries: list[dict] = []
-
+    """
+    n_jobs > 1 runs the independent (gap, algorithm, seed) runs in parallel
+    worker processes (each run only depends on its own seed, so results are
+    identical to the sequential n_jobs=1 case, just faster).
+    """
     gap_values = sorted(set(float(g) for g in gap_values), reverse=True)
 
     print("Base experiment:", base_config.name)
     print("Testing boundary gaps (delta_min):", gap_values)
     print()
 
-    total_runs = len(gap_values) * len(base_config.algorithms) * base_config.num_seeds
+    jobs: list[dict[str, Any]] = []
+    for gap in gap_values:
+        theta = make_gap_theta(
+            n=base_config.n,
+            k=base_config.k,
+            top_value=top_value,
+            boundary_gap=gap,
+            tail_value=tail_value,
+            shuffle=False,
+        )
+
+        print(f"delta_min={gap:.4f}  theta_diagnostics={theta_diagnostics(theta, k=base_config.k)}")
+
+        sweep_config = replace(
+            base_config,
+            name=f"{base_config.name}_gap{gap:g}",
+            output_dir=str(output_dir),
+        )
+
+        for algorithm_name in base_config.algorithms:
+            for seed in range(base_config.num_seeds):
+                jobs.append(
+                    {
+                        "gap": gap,
+                        "algorithm_name": algorithm_name,
+                        "theta": theta,
+                        "sweep_config": sweep_config,
+                        "seed": seed,
+                    }
+                )
+    print()
+
+    histories: list[pd.DataFrame] = []
+    summaries: list[dict] = []
+
     outer = make_pbar(
-        total=total_runs,
+        total=len(jobs),
         desc=_truncate(f"{base_config.name} (by delta_min)", 28),
         unit="run",
     )
 
+    def _report(job: dict[str, Any], summary: dict) -> None:
+        tqdm.write(
+            f"delta_min={job['gap']:.4f} {job['algorithm_name']:16s} seed={job['seed']:03d} "
+            f"final_regret={summary['final_cumulative_regret']:.4f} "
+            f"correct={summary['correct']} completed={summary['completed']}"
+        )
+        outer.update(1)
+
     try:
-        for gap in gap_values:
-            theta = make_gap_theta(
-                n=base_config.n,
-                k=base_config.k,
-                top_value=top_value,
-                boundary_gap=gap,
-                tail_value=tail_value,
-                shuffle=False,
-            )
-
-            tqdm.write(
-                f"delta_min={gap:.4f}  theta_diagnostics={theta_diagnostics(theta, k=base_config.k)}"
-            )
-
-            sweep_config = replace(
-                base_config,
-                name=f"{base_config.name}_gap{gap:g}",
-                output_dir=str(output_dir),
-            )
-
-            for algorithm_name in base_config.algorithms:
-                for seed in range(base_config.num_seeds):
-                    history_df, summary = run_single_seed(
-                        algorithm_name=algorithm_name,
-                        theta=theta,
-                        config=sweep_config,
-                        seed=seed,
-                    )
-
-                    history_df = history_df.copy()
-                    history_df["delta_min"] = gap
-
-                    summary = add_completion_and_tail_metrics(
-                        history_df=history_df,
-                        summary=summary,
-                        T=sweep_config.T,
-                    )
-                    summary["delta_min"] = gap
-
+        if n_jobs <= 1:
+            for job in jobs:
+                history_df, summary = _run_one_job(job)
+                histories.append(history_df)
+                summaries.append(summary)
+                _report(job, summary)
+        else:
+            with ProcessPoolExecutor(max_workers=n_jobs) as executor:
+                future_to_job = {executor.submit(_run_one_job, job): job for job in jobs}
+                for future in as_completed(future_to_job):
+                    history_df, summary = future.result()
                     histories.append(history_df)
                     summaries.append(summary)
-
-                    tqdm.write(
-                        f"delta_min={gap:.4f} {algorithm_name:16s} seed={seed:03d} "
-                        f"final_regret={summary['final_cumulative_regret']:.4f} "
-                        f"correct={summary['correct']} completed={summary['completed']}"
-                    )
-
-                    outer.update(1)
+                    _report(future_to_job[future], summary)
     finally:
         outer.close()
 
@@ -381,6 +420,15 @@ def parse_args() -> argparse.Namespace:
         "or 'ci95' for the wider +/- 1.96*SEM 95%% confidence interval.",
     )
 
+    parser.add_argument(
+        "--jobs",
+        type=int,
+        default=1,
+        help="Number of worker processes to run (gap, algorithm, seed) runs in "
+        "parallel. Each run only depends on its own seed, so results are "
+        "identical to --jobs 1, just faster. Default: 1 (sequential).",
+    )
+
     return parser.parse_args()
 
 
@@ -408,6 +456,7 @@ def main() -> None:
         output_dir=output_dir,
         top_value=args.top_value,
         tail_value=args.tail_value,
+        n_jobs=args.jobs,
     )
 
     save_outputs(

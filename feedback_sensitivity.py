@@ -9,6 +9,7 @@ from typing import Iterable, Optional
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+from tqdm.auto import tqdm
 
 from experiments import (
     ExperimentConfig,
@@ -17,6 +18,8 @@ from experiments import (
     run_single_seed,
     build_theta,
     theta_diagnostics,
+    make_pbar,
+    _truncate,
 )
 
 
@@ -276,59 +279,68 @@ def run_feedback_sensitivity(
     output_dir: Path,
 ) -> tuple[pd.DataFrame, pd.DataFrame, np.ndarray]:
     theta = build_theta(base_config)
+    m_values = list(m_values)
 
     histories: list[pd.DataFrame] = []
     summaries: list[dict] = []
 
     print("Base experiment:", base_config.name)
-    print("Testing feedback levels:", list(m_values))
+    print("Testing feedback levels:", m_values)
     print("Theta diagnostics:", theta_diagnostics(theta, k=base_config.k))
     print("Theta:", np.round(theta, 4))
     print()
 
-    for m in m_values:
-        sweep_config = replace(
-            base_config,
-            name=f"{base_config.name}_m{m}",
-            m=int(m),
-            algorithms=("topk_uif",),
-            output_dir=str(output_dir),
-        )
+    total_runs = len(m_values) * base_config.num_seeds
+    outer = make_pbar(total=total_runs, desc=_truncate(f"{base_config.name} (by m)", 28), unit="run")
 
-        validate_config(sweep_config)
-
-        for seed in range(sweep_config.num_seeds):
-            history_df, summary = run_single_seed(
-                algorithm_name="topk_uif",
-                theta=theta,
-                config=sweep_config,
-                seed=seed,
+    try:
+        for m in m_values:
+            sweep_config = replace(
+                base_config,
+                name=f"{base_config.name}_m{m}",
+                m=int(m),
+                algorithms=("topk_uif",),
+                output_dir=str(output_dir),
             )
 
-            history_df = history_df.copy()
-            history_df["base_experiment"] = base_config.name
-            history_df["feedback_m"] = int(m)
-            history_df["feedback_fraction"] = float(m / base_config.k)
+            validate_config(sweep_config)
 
-            summary = add_completion_and_tail_metrics(
-                history_df=history_df,
-                summary=summary,
-                T=sweep_config.T,
-            )
-            summary["base_experiment"] = base_config.name
-            summary["feedback_m"] = int(m)
-            summary["feedback_fraction"] = float(m / base_config.k)
+            for seed in range(sweep_config.num_seeds):
+                history_df, summary = run_single_seed(
+                    algorithm_name="topk_uif",
+                    theta=theta,
+                    config=sweep_config,
+                    seed=seed,
+                )
 
-            histories.append(history_df)
-            summaries.append(summary)
+                history_df = history_df.copy()
+                history_df["base_experiment"] = base_config.name
+                history_df["feedback_m"] = int(m)
+                history_df["feedback_fraction"] = float(m / base_config.k)
 
-            print(
-                f"m={m:2d} seed={seed:03d} "
-                f"final_regret={summary['final_cumulative_regret']:.4f} "
-                f"correct={summary['correct']} "
-                f"completed={summary['completed']} "
-                f"completion_round={summary['completion_round']}"
-            )
+                summary = add_completion_and_tail_metrics(
+                    history_df=history_df,
+                    summary=summary,
+                    T=sweep_config.T,
+                )
+                summary["base_experiment"] = base_config.name
+                summary["feedback_m"] = int(m)
+                summary["feedback_fraction"] = float(m / base_config.k)
+
+                histories.append(history_df)
+                summaries.append(summary)
+
+                tqdm.write(
+                    f"m={m:2d} seed={seed:03d} "
+                    f"final_regret={summary['final_cumulative_regret']:.4f} "
+                    f"correct={summary['correct']} "
+                    f"completed={summary['completed']} "
+                    f"completion_round={summary['completion_round']}"
+                )
+
+                outer.update(1)
+    finally:
+        outer.close()
 
     history_all = pd.concat(histories, ignore_index=True)
     summary_all = pd.DataFrame(summaries)

@@ -11,9 +11,31 @@ from typing import Any, Optional
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+from tqdm.auto import tqdm
 
 from environment import RelativeFeedbackCMABEnv
 from algorithms import TopKUIF, UniformRandomTopK, RecMaxMinUCB
+
+
+# Shared bar layout so every progress bar in this project renders consistently
+# and fits inside common terminal widths. dynamic_ncols keeps it responsive to
+# resizes; the explicit bar_format keeps it compact (no verbose rate units).
+TQDM_BAR_FORMAT = (
+    "{desc} {percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}{postfix}]"
+)
+
+
+def make_pbar(*, total: int, desc: str, leave: bool = True, unit: str = "it", unit_scale: bool = False):
+    return tqdm(
+        total=total,
+        desc=desc,
+        leave=leave,
+        dynamic_ncols=True,
+        bar_format=TQDM_BAR_FORMAT,
+        unit=unit,
+        unit_scale=unit_scale,
+        mininterval=0.2,
+    )
 
 
 # ============================================================
@@ -203,6 +225,57 @@ def make_gap_theta(
     return maybe_shuffle(theta, shuffle=shuffle, seed=seed)
 
 
+def make_top_gap_theta(
+    *,
+    n: int,
+    k: int,
+    top_value: float = 1.0,
+    top_gap: float = 0.1,
+    boundary_gap: float = 0.2,
+    tail_value: Optional[float] = None,
+    shuffle: bool = False,
+    seed: Optional[int] = None,
+) -> np.ndarray:
+    """
+    Controls the gap between the best arm (rank 1) and the rest of the
+    top-k (ranks 2..k), while keeping the k-th/(k+1)-th boundary gap fixed.
+
+    Since top-k identification only requires resolving set membership (the
+    k-th vs (k+1)-th boundary), not the internal ranking within the top-k,
+    shrinking top_gap should leave the correctness/regret profile of
+    Top-k-UIF largely unaffected. This is a useful control to contrast
+    against make_gap_theta's boundary sweep.
+
+        theta[0]    = top_value                          (rank 1)
+        theta[1:k]  = top_value - top_gap                 (ranks 2..k, tied)
+        theta[k:]   = top_value - top_gap - boundary_gap   (tail, tied)
+    """
+    if not (2 <= k < n):
+        raise ValueError("Require 2 <= k < n (need at least 2 top arms).")
+    if top_value <= 0:
+        raise ValueError("top_value must be positive.")
+    if not (0 < top_gap < top_value):
+        raise ValueError("top_gap must be in (0, top_value).")
+
+    second_value = top_value - top_gap
+
+    if tail_value is None:
+        if not (0 < boundary_gap < second_value):
+            raise ValueError("boundary_gap must be in (0, top_value - top_gap).")
+        tail_value = second_value - boundary_gap
+
+    if tail_value <= 0:
+        raise ValueError("tail_value must be positive.")
+
+    theta = np.empty(n, dtype=float)
+    theta[0] = top_value
+    theta[1:k] = second_value
+    theta[k:] = tail_value
+    theta = normalize_theta(theta)
+
+    return maybe_shuffle(theta, shuffle=shuffle, seed=seed)
+
+
 def make_weak_kth_theta(
     *,
     n: int,
@@ -360,6 +433,9 @@ def build_theta(config: ExperimentConfig) -> np.ndarray:
     if kind == "gap":
         return make_gap_theta(n=config.n, k=config.k, **spec)
 
+    if kind == "top_gap":
+        return make_top_gap_theta(n=config.n, k=config.k, **spec)
+
     if kind == "weak_kth":
         return make_weak_kth_theta(n=config.n, k=config.k, **spec)
 
@@ -371,7 +447,7 @@ def build_theta(config: ExperimentConfig) -> np.ndarray:
 
     raise ValueError(
         f"Unknown instance kind '{kind}'. "
-        "Supported kinds: explicit, geometric, gap, weak_kth, "
+        "Supported kinds: explicit, geometric, gap, top_gap, weak_kth, "
         "boundary_cloud, two_level_decoy."
     )
 
@@ -380,6 +456,11 @@ def theta_diagnostics(theta: np.ndarray, *, k: int) -> dict[str, float]:
     sorted_theta = np.sort(theta)[::-1]
 
     return {
+        "theta_1": float(sorted_theta[0]),
+        "theta_2": float(sorted_theta[1]) if len(sorted_theta) > 1 else float("nan"),
+        "top_gap": (
+            float(sorted_theta[0] - sorted_theta[1]) if len(sorted_theta) > 1 else float("nan")
+        ),
         "theta_k": float(sorted_theta[k - 1]),
         "theta_k_plus_1": float(sorted_theta[k]),
         "boundary_gap": float(sorted_theta[k - 1] - sorted_theta[k]),
@@ -447,12 +528,19 @@ def build_algorithm(
 # Running experiments
 # ============================================================
 
+def _truncate(text: str, width: int) -> str:
+    if len(text) <= width:
+        return text
+    return text[: max(1, width - 1)] + "…"
+
+
 def run_single_seed(
     *,
     algorithm_name: str,
     theta: np.ndarray,
     config: ExperimentConfig,
     seed: int,
+    show_progress: bool = True,
 ) -> tuple[pd.DataFrame, dict[str, Any]]:
     env = RelativeFeedbackCMABEnv(
         theta=theta,
@@ -476,29 +564,52 @@ def run_single_seed(
 
     rows: list[dict[str, Any]] = []
 
-    for _ in range(config.T):
-        action = algo.select_action()
-        result = env.step(action)
-        algo.update(result)
+    # Throttle postfix formatting (not just rendering) since it runs every
+    # iteration otherwise, which matters once T reaches hundreds of thousands.
+    postfix_every = max(1, config.T // 200)
 
-        state = algo.state()
+    desc = _truncate(f"{algorithm_name} seed={seed:03d}", 28)
+    pbar = (
+        make_pbar(total=config.T, desc=desc, leave=False, unit="rd", unit_scale=True)
+        if show_progress
+        else None
+    )
 
-        if result.t % config.save_every == 0 or result.t == config.T:
-            rows.append(
-                {
-                    "experiment": config.name,
-                    "algorithm": algorithm_name,
-                    "seed": seed,
-                    "round": result.t,
-                    "instantaneous_regret": result.instantaneous_regret,
-                    "cumulative_regret": result.cumulative_regret,
-                    "expected_reward": result.expected_reward,
-                    "accepted_size": len(state.accepted),
-                    "unknown_size": len(state.unknown),
-                    "completed": state.completed,
-                    "pivot": state.pivot,
-                }
-            )
+    try:
+        for t in range(1, config.T + 1):
+            action = algo.select_action()
+            result = env.step(action)
+            algo.update(result)
+
+            state = algo.state()
+
+            if result.t % config.save_every == 0 or result.t == config.T:
+                rows.append(
+                    {
+                        "experiment": config.name,
+                        "algorithm": algorithm_name,
+                        "seed": seed,
+                        "round": result.t,
+                        "instantaneous_regret": result.instantaneous_regret,
+                        "cumulative_regret": result.cumulative_regret,
+                        "expected_reward": result.expected_reward,
+                        "accepted_size": len(state.accepted),
+                        "unknown_size": len(state.unknown),
+                        "completed": state.completed,
+                        "pivot": state.pivot,
+                    }
+                )
+
+            if pbar is not None:
+                pbar.update(1)
+                if t % postfix_every == 0 or t == config.T:
+                    pbar.set_postfix(
+                        {"regret": f"{result.cumulative_regret:.1f}"},
+                        refresh=False,
+                    )
+    finally:
+        if pbar is not None:
+            pbar.close()
 
     final_state = algo.state()
 
@@ -544,25 +655,33 @@ def run_experiment(config: ExperimentConfig) -> tuple[pd.DataFrame, pd.DataFrame
     histories: list[pd.DataFrame] = []
     summaries: list[dict[str, Any]] = []
 
-    for algorithm_name in config.algorithms:
-        for seed in range(config.num_seeds):
-            history_df, summary = run_single_seed(
-                algorithm_name=algorithm_name,
-                theta=theta,
-                config=config,
-                seed=seed,
-            )
+    total_runs = len(config.algorithms) * config.num_seeds
+    outer = make_pbar(total=total_runs, desc=_truncate(config.name, 28), unit="run")
 
-            histories.append(history_df)
-            summaries.append(summary)
+    try:
+        for algorithm_name in config.algorithms:
+            for seed in range(config.num_seeds):
+                history_df, summary = run_single_seed(
+                    algorithm_name=algorithm_name,
+                    theta=theta,
+                    config=config,
+                    seed=seed,
+                )
 
-            print(
-                f"{algorithm_name:16s} seed={seed:03d} "
-                f"final_regret={summary['final_cumulative_regret']:.4f} "
-                f"correct={summary['correct']} "
-                f"completed={summary['completed']} "
-                f"recall={summary['recall']:.3f}"
-            )
+                histories.append(history_df)
+                summaries.append(summary)
+
+                tqdm.write(
+                    f"{algorithm_name:16s} seed={seed:03d} "
+                    f"final_regret={summary['final_cumulative_regret']:.4f} "
+                    f"correct={summary['correct']} "
+                    f"completed={summary['completed']} "
+                    f"recall={summary['recall']:.3f}"
+                )
+
+                outer.update(1)
+    finally:
+        outer.close()
 
     return (
         pd.concat(histories, ignore_index=True),

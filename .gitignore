@@ -226,3 +226,7 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# EWS generated artifacts and local environments
+outputs/
+.venv/

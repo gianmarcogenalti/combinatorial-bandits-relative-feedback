@@ -1,0 +1,199 @@
+name: cmab_ranking_smoke
+seed: 2026
+runs:
+- name: comparison
+  planner: grid
+  repetitions: 2
+  budget:
+    steps: 300
+  protocol:
+    type: online
+  data:
+    type: experiment_code.data:RankingBandit
+    params:
+      theta:
+      - 1
+      - 1
+      - 0.65
+      - 0.55
+      - 0.55
+      - 0.55
+      - 0.55
+      - 0.55
+      - 0.55
+      - 0.55
+      k: 3
+      m: 3
+      mnl: false
+      theta0: 1.0
+  algorithms:
+  - name: topk_uif
+    type: experiment_code.algorithms:UIF
+    params:
+      n: 10
+      k: 3
+      m: 3
+      horizon: 1000000
+      delta: 0.05
+      beta_scale: 0.25
+  - name: rec_maxmin_ucb
+    type: experiment_code.algorithms:RecMaxMinUCB
+    params:
+      n: 10
+      k: 3
+      m: 3
+      alpha: 0.51
+  grid: {}
+- name: feedback
+  planner: grid
+  repetitions: 2
+  budget:
+    steps: 300
+  protocol:
+    type: online
+  data:
+    type: experiment_code.data:RankingBandit
+    params:
+      theta:
+      - 1.0
+      - 0.93
+      - 0.82
+      - 0.78
+      - 0.74
+      - 0.7
+      - 0.6
+      - 0.57
+      - 0.54
+      - 0.51
+      - 0.48
+      - 0.45
+      - 0.3
+      - 0.25
+      - 0.2
+      - 0.15
+      k: 6
+      m: 1
+      mnl: false
+      theta0: 1.0
+  algorithms:
+  - name: topk_uif
+    type: experiment_code.algorithms:UIF
+    params:
+      n: 16
+      k: 6
+      horizon: 1000000
+      delta: 0.05
+      beta_scale: 0.25
+  grid:
+    data.params.m:
+    - 1
+    - 2
+    - 3
+    - 6
+- name: mnl
+  planner: grid
+  repetitions: 2
+  budget:
+    steps: 300
+  protocol:
+    type: online
+  data:
+    type: experiment_code.data:RankingBandit
+    params:
+      theta:
+      - 1.0
+      - 0.95
+      - 0.9
+      - 0.85
+      - 0.8
+      - 0.65
+      - 0.62
+      - 0.59
+      - 0.56
+      - 0.53
+      - 0.5
+      - 0.47
+      - 0.44
+      - 0.41
+      - 0.38
+      - 0.35
+      - 0.32
+      - 0.29
+      - 0.26
+      - 0.23
+      - 0.2
+      - 0.18
+      - 0.16
+      - 0.14
+      - 0.12
+      - 0.1
+      - 0.08
+      - 0.06
+      - 0.04
+      - 0.02
+      k: 5
+      m: 1
+      mnl: true
+      theta0: 1.0
+  algorithms:
+  - name: mnl_topk_uif
+    type: experiment_code.algorithms:UIF
+    params:
+      n: 30
+      k: 5
+      mnl: true
+      horizon: 1000000
+      delta: 0.05
+      beta_scale: 0.25
+  - name: sg_adaptive
+    type: experiment_code.algorithms:AOARB
+    params:
+      n: 30
+      k: 5
+      adaptive: true
+      horizon: 1000000
+      x_scale: 2.0
+  - name: sg_no_choice
+    type: experiment_code.algorithms:AOARB
+    params:
+      n: 30
+      k: 5
+      adaptive: false
+      horizon: 1000000
+      x_scale: 2.0
+  grid:
+    data.params.theta0:
+    - 0.001
+    - 0.01
+    - 0.1
+    - 1.0
+execution:
+  workers: 2
+  checkpoint_seconds: 120
+  checkpoint_steps: 100
+  compression: true
+recording:
+  every_steps: 1
+  fields:
+  - action
+  buffer_bytes: 1048576
+  retention: until_analyzed
+  metric_retention: until_aggregated
+display:
+  timezone: Europe/Rome
+analysis:
+  points: 200
+  metrics:
+  - name: regret
+    type: experiment_code.metrics:TopKRegret
+  aggregator:
+    group_by:
+    - group
+    - algorithm.name
+    - data.params.m
+    - data.params.theta0
+    uncertainty: standard_error
+  figures:
+  - name: paper
+    type: experiment_code.figures:PaperFigures
+    metric: regret

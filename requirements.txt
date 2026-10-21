@@ -1,0 +1,4 @@
+experiments-wo-stress @ git+https://github.com/m1gwings/experiments-wo-stress.git@4ba0dd60e43e8dabae5b5f879cde01f6765418db
+numpy==1.26.4
+PyYAML==6.0.3
+rich==15.0.0

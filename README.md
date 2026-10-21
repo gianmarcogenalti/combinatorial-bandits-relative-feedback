@@ -1,5 +1,65 @@
 # Experiments
 
+## EWS reproduction of the current manuscript
+
+`experiment.yml` reproduces the three numerical settings with **30 independent
+trials per setting and algorithm**, horizon **1,000,000**, feedback levels
+`[1, 2, 3, 6]`, and no-choice parameters `[0.001, 0.01, 0.1, 1]`: 540 runs.
+The original scripts and results below remain available for comparison.
+
+```bash
+python -m venv .venv
+.venv/bin/pip install -r requirements.txt
+.venv/bin/ews count-runs experiment.yml
+.venv/bin/ews run experiment.yml --output outputs/paper --workers 2
+```
+
+EWS is pinned to `4ba0dd60e43e8dabae5b5f879cde01f6765418db`; runtime
+dependencies are pinned in `requirements.txt`. Each algorithm and environment
+receives its own seeded NumPy stream. Seed 2026 starts new reproducible trials;
+these are not bit-for-bit continuations of the old experiments. Worker count
+does not change the streams. All actions are recorded; regret is computed
+afterward against the saved instance as the difference of mean preferences.
+Completed trajectories are removed only after their regret metric is durable;
+per-run metrics are removed only after their mean and SEM are aggregated.
+Saved summaries retain 200 points including both endpoints.
+
+Smoke check and scientific regressions:
+
+```bash
+python -m pytest -q tests/test_ews.py
+.venv/bin/ews run experiment.smoke.yml --output outputs/smoke --workers 2
+```
+
+The smoke configuration tests all 18 setting/algorithm combinations with two
+300-round repetitions. It validates the pipeline, not the scientific conclusions.
+See [the algorithm audit](ALGORITHM_AUDIT.md) for the current-pseudocode fixes,
+practical confidence settings, baseline interpretation, and legacy discrepancies.
+
+Cloud execution (repository snapshot; no research push required):
+
+```bash
+cloud-run experiment.yml --machine cpx52 --max-runtime 24 \
+  --ews-ref 4ba0dd60e43e8dabae5b5f879cde01f6765418db
+cloud-attach RUN_ID  # live EWS dashboard; detach with Ctrl-b then d
+cloud-status RUN_ID
+cloud-results pull RUN_ID --plots
+```
+
+The cloud worker persists checkpoints and results and deletes itself after
+completion or its deadline. Repeat `cloud-run` to resume an interrupted study.
+Locally, `ews inspect outputs/paper` shows saved status; redirected EWS output
+provides plain progress updates suitable for `tail -f`.
+
+Figures are exported as `analysis/figures/{cumulative_regret,final_regret_vs_m,
+final_regret_vs_theta0}.tikz`. These are native PGFPlots fragments inheriting
+the manuscript's fonts, with the original blue/orange/green palette, line styles,
+linear/log axes, and mean +/- **SEM**. The old PDF exporters used 1.96 times SEM
+despite the manuscript captions. Load `pgfplots` and its `fillbetween` library,
+set `compat=1.18`, and replace each corresponding `includegraphics`/`resizebox`
+with `\input{plots/NAME.tikz}` inside its existing minipage. Do not integrate
+smoke-test figures into the manuscript.
+
 This repository runs experiments from a YAML configuration file. The default config file is:
 
 ```bash

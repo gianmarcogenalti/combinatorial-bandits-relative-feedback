@@ -121,3 +121,34 @@ def test_adaptive_unknown_ratio_bounds_remain_infinite_ties():
     # All arms still have infinite bounds to no-choice; across seeds all are sampled.
     selections = {tuple(algorithm.act()) for _ in range(100)}
     assert selections == {(0, 1), (0, 2), (1, 2)}
+
+
+@pytest.mark.parametrize("mnl", [False, True])
+def test_uif_uses_unscaled_manuscript_confidence_radius(mnl):
+    """Both algorithms use n real arms in log(2*n*T/delta), with unit prefactor."""
+    algorithm = UIF(
+        rng=np.random.default_rng(3), n=10, k=3, mnl=mnl, horizon=10_000_000, delta=0.05
+    )
+    np.testing.assert_allclose(algorithm.log_bonus, np.log(2 * 10 * 10_000_000 / 0.05))
+    # Increasing the comparison count by four must divide the radius by two.
+    radii = np.sqrt(algorithm.log_bonus / np.array([100, 400]))
+    assert radii[0] == 2 * radii[1]
+    with pytest.raises(TypeError):
+        UIF(rng=np.random.default_rng(3), n=10, k=3, beta_scale=0.25)
+
+
+def test_regret_downsampling_includes_every_action():
+    """An unretained intermediate action must still contribute to final regret."""
+    from types import SimpleNamespace
+
+    from experiment_code.metrics import TopKRegret
+
+    class Saved(dict):
+        instance = SimpleNamespace(arrays={"theta": np.array([1.0, 0.5, 0.1])})
+
+    result = Saved(
+        step=np.arange(1, 6), action=np.array([[0, 1], [1, 2], [0, 1], [1, 2], [0, 1]])
+    )
+    curve = TopKRegret(points=2).compute(result)
+    np.testing.assert_array_equal(curve.x, [1, 5])
+    np.testing.assert_allclose(curve.values, [0.0, 0.9])

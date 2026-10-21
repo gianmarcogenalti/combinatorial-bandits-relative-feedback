@@ -2,32 +2,24 @@
 
 import numpy as np
 
-from algorithms import RecMaxMinUCB as LegacyRecMaxMinUCB
+from .recmaxmin import RecMaxMinUCB as LegacyRecMaxMinUCB
 
 
 class UIF:
     """Algorithms 1/3 and their shared subroutines, using pre-round A, U and P.
 
     Rows of counts/wins correspond to pivots. No-choice is indexed by n.
-    The practical confidence multiplier is explicit. Cardinality guards follow
+    Confidence radii are sqrt(log(2*n*T/delta)/N), without rescaling. Guards follow
     Appendix C, using ascending arm order; activations are counted in checkpoints.
     """
 
     supports_extension = False  # Confidence bounds depend on the fixed horizon.
 
-    def __init__(
-        self, *, rng, n, k, m=1, mnl=False, horizon=1000000, delta=0.05, beta_scale=0.25
-    ):
-        if not (
-            2 <= k <= n
-            and 1 <= m <= k
-            and 0 < delta <= 1
-            and horizon >= 1
-            and beta_scale > 0
-        ):
+    def __init__(self, *, rng, n, k, m=1, mnl=False, horizon=1000000, delta=0.05):
+        if not (2 <= k <= n and 1 <= m <= k and 0 < delta <= 1 and horizon >= 1):
             raise ValueError("Invalid UIF parameters")
         self.rng, self.n, self.k, self.m, self.mnl = rng, n, k, m, mnl
-        self.log_bonus = beta_scale**2 * np.log(2 * (n + int(mnl)) * horizon / delta)
+        self.log_bonus = np.log(2 * n * horizon / delta)
         dim = n + int(mnl)
         self.counts = np.zeros((dim, dim))
         self.wins = np.zeros((dim, dim))

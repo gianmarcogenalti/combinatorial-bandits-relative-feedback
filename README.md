@@ -94,3 +94,9 @@ Saved outputs are identified by their source revision and configuration. Use a
 fresh output directory for this configuration; outputs from earlier revisions
 may use different parameters and must not be mixed with this study. Earlier
 source revisions remain available in Git history; existing results are preserved.
+
+The checked-in [reference results](reference_results/) contain the aggregate
+curves, final mean/SEM values, native figures, and source/configuration provenance
+for the completed 216-run study. They use the unscaled bounds above. Reproduction
+with the pinned source and dependencies should agree with these results; see
+`reference_results/provenance.json` for source revisions and file checksums.

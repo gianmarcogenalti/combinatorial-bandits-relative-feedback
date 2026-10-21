@@ -11,10 +11,21 @@ class TopKRegret:
     required_instance_fields = ("theta",)
     requires_complete_trajectory = True
 
+    def __init__(self, points=200):
+        if points < 2:
+            raise ValueError("At least two metric points are required")
+        self.points = int(points)
+
     def compute(self, result):
         theta = result.instance.arrays["theta"]
         actions = result["action"].astype(np.int64)
         k = actions.shape[1]
         optimal = np.sort(theta)[-k:].mean()
         regret = np.maximum(0, optimal - theta[actions].mean(axis=1))
-        return MetricResult(x=result["step"], values=np.cumsum(regret))
+        cumulative = np.cumsum(regret)
+        indices = np.unique(
+            np.linspace(
+                0, len(cumulative) - 1, min(self.points, len(cumulative)), dtype=int
+            )
+        )
+        return MetricResult(x=result["step"][indices], values=cumulative[indices])

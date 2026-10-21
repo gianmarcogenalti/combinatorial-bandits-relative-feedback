@@ -31,21 +31,45 @@ class PaperFigures:
                 r"\definecolor{papergreen}{HTML}{2CA02C}",
             ]
             options = [
-                r"width=\linewidth",
-                r"height=0.91\linewidth",
-                r"font=\scriptsize",
+                # Fix the inner axes as well as the outer canvas.  Letting PGFPlots
+                # infer the box from tick labels/legends misaligns log/linear panels.
+                "scale only axis",
+                r"at={(0.17\linewidth,0.14\linewidth)}",
+                "anchor=south west",
+                r"width=0.80\linewidth",
+                r"height=0.60\linewidth",
+                r"font=\fontsize{4.5}{5.5}\selectfont",
+                r"label style={font=\fontsize{5.5}{6.5}\selectfont}",
+                "xlabel style={at={(axis description cs:0.5,-0.16)},anchor=north}",
+                "ylabel style={at={(axis description cs:-0.16,0.5)},anchor=south}",
                 "grid=major",
-                "grid style={gray!30}",
+                "grid style={gray!35,line width=0.25pt}",
+                "axis line style={line width=0.4pt}",
+                "tick style={line width=0.35pt}",
                 "tick align=outside",
+                "major tick length=1.5pt",
+                "minor tick length=0.8pt",
+                "xtick pos=left",
+                "ytick pos=left",
                 r"ylabel={Cumulative Top-$k$ Regret}",
-                r"legend style={font=\tiny,draw=gray!30,fill=white,cells={anchor=west}}",
+                r"legend style={font=\fontsize{4.2}{5.2}\selectfont,draw=gray!35,fill=white,cells={anchor=west},inner xsep=1pt,inner ysep=0.5pt,row sep=0pt}",
+                "legend image post style={xscale=0.5}",
             ]
             if group == "comparison":
+                horizon = max(float(s.x[-1]) for s in selected)
+                exponent = int(np.floor(np.log10(horizon))) if horizon >= 1 else 0
+                tick_positions = np.linspace(0, horizon, 6)
+                tick_labels = tick_positions / 10**exponent
                 options += [
-                    "xlabel={Learning Horizon}",
+                    rf"xlabel={{Learning Horizon ($10^{{{exponent}}}$)}}",
                     "xmin=0",
+                    f"xmax={horizon:.12g}",
                     "ymin=0",
-                    "scaled x ticks=base 10:-6",
+                    "scaled x ticks=false",
+                    "xtick={" + ",".join(f"{v:.12g}" for v in tick_positions) + "}",
+                    "xticklabels={" + ",".join(f"{v:g}" for v in tick_labels) + "}",
+                    "scaled y ticks=false",
+                    "yticklabel style={/pgf/number format/1000 sep={}}",
                     "legend pos=south west",
                 ]
                 series = [
@@ -55,7 +79,13 @@ class PaperFigures:
             else:
                 key = "data.params.m" if group == "feedback" else "data.params.theta0"
                 options += (
-                    [r"xlabel={Feedback Level $m$}", "xtick={1,2,3,6}", "ymin=0"]
+                    [
+                        r"xlabel={Feedback Level $m$}",
+                        "xtick={1,2,3,6}",
+                        "ymin=0",
+                        "scaled y ticks=false",
+                        "yticklabel style={/pgf/number format/1000 sep={}}",
+                    ]
                     if group == "feedback"
                     else [
                         r"xlabel={``No-Choice'' Parameter $\theta_0$}",
@@ -110,18 +140,26 @@ class PaperFigures:
                             rf"\addplot[{color},fill opacity=0.18,draw=none,forget plot] fill between[of=c{index}lo and c{index}hi];"
                         )
                     coords = " ".join(f"({a:.12g},{b:.12g})" for a, b in zip(x, mean))
-                    lines.append(rf"\addplot[{style},thick] coordinates {{{coords}}};")
+                    lines.append(
+                        rf"\addplot[{style},line width=0.6pt] coordinates {{{coords}}};"
+                    )
                 else:
                     coords = " ".join(
                         f"({a:.12g},{b:.12g}) +- (0,{e:.12g})"
                         for a, b, e in zip(x, mean, np.nan_to_num(sem))
                     )
                     lines.append(
-                        rf"\addplot[{style},thick,mark=*,mark size=1.4pt,error bars/.cd,y dir=both,y explicit] coordinates {{{coords}}};"
+                        rf"\addplot[{style},line width=0.6pt,mark=*,mark size=0.85pt,error bars/.cd,y dir=both,y explicit,error mark options={{mark size=1pt,line width=0.4pt}}] coordinates {{{coords}}};"
                     )
                 if group != "feedback":
                     lines.append(r"\addlegendentry{" + label + "}")
-            lines += [r"\end{axis}", r"\end{tikzpicture}", ""]
+            lines += [
+                r"\end{axis}",
+                r"\pgfresetboundingbox",
+                r"\path[use as bounding box] (0,0) rectangle (\linewidth,0.75\linewidth);",
+                r"\end{tikzpicture}",
+                "",
+            ]
             path = output / (filename + ".tikz")
             path.write_text("\n".join(lines))
             files.append(path)

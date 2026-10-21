@@ -1,62 +1,79 @@
-# Algorithm audit for the EWS rerun
+# Implementation notes
 
-Audited 2026-10-21 against the working manuscript, including its pre-existing
-uncommitted algorithm/proof edits. Original experiment revision: `dbd226e`.
-The paper and experiment repositories remain separate; old results are preserved.
+## UIF and MNL-UIF
 
-| Paper statement / source | EWS implementation | Decision / difference from legacy |
-| --- | --- | --- |
-| Algorithms 1/3, `algs/top_k_uif.tex`, `algs/mnl_top_k_uif.tex` | `experiment_code/algorithms.py:UIF` | Common implementation, pre-round A/U/P, uniform exploration; no-choice has internal index n rather than paper index 0. |
-| RB-Update, `algs/subroutines.tex` | `UIF.observe` | Only different observed ranks update; censored/censored pairs do not. Pivot rows store wins of the column arm over that pivot. |
-| Count-BA transitive closure | Boolean Floyd-Warshall | Legacy already implements closure; keep it, including paths witnessed by different pivots. |
-| New-Pivot exact argmax over old U | `UIF.observe` | Legacy `algorithms.py:504,1346` uses `isclose`, permitting inferior near-maxima. New port uses exact maximizers. |
-| First accepted MNL arm replaces no-choice if New-Pivot has no candidate, Algorithm 3 | `UIF.observe` | Missing in legacy `1238–1246`. Substantive: at theta0=1 the good-event LCBs cannot exceed 1/2, yet Count-BA can accept real arms. |
-| Clear U when A has k arms, Algorithms 1/3 | `UIF.observe` | Missing in legacy `381–386,1248–1251`; fixes completion diagnostics and redundant updates. |
-| Pivot-based acceptance loops over old U | `UIF.observe` | Legacy `354,1221` restricts to remaining U. This only differs outside the confidence event. |
-| Cardinality guards, `appendix/C_alg_details.tex:11` | `UIF.observe` | Guard each acceptance/rejection in ascending arm order; count activations. Legacy caps candidate batches using random selection. Equivalent on the confidence event. |
-| Confidence bounds | explicit `beta_scale=.25`, delta=.05, horizon=1e6 | Preserve practical legacy radius, not theorem coefficient 1 and delta=1/T. MNL uses n+1 in its log as before. These radii do not automatically inherit the theorem guarantees. |
-| Three numerical instances, `content/06_num_sim.tex`, `appendix/F_num_sim.tex` | `experiment.yml` | Same fixed theta values, k and T; use 30 trials for sensitivity (legacy config says 10); explicitly choose m=1,2,3,6. |
-| Regret is difference of average selected preferences, also for MNL | `metrics.py:TopKRegret` | Compute from every saved action, never reconstruct cumulative regret from sparse actions. |
-| Captions: mean +/- SEM | repeated-runs standard_error; `figures.py` | Legacy PDF exporters use 1.96 SEM. New bands and error bars use plain SEM. |
+`experiment_code/algorithms.py` implements Top-k-UIF and its MNL adaptation.
+Each round uses snapshots of the accepted set, unknown set, and pivot from the
+start of that round. The played assortment contains accepted real arms and the
+real pivot, with remaining positions sampled uniformly from unknown arms.
+The fictitious MNL no-choice item is represented internally by index n and does
+not occupy a real assortment position.
 
-The original n=10 configuration shuffles arm labels with seed 123. The port uses
-the equivalent ordered fixed instance stated in the paper. EWS stream identities
-also differ from old seed offsets; numerical reruns are independent, not identical
-old trajectories. Exponential races sample exactly the PL distribution, changing
-the sampling implementation from sequential choices without changing its law.
+Rank breaking updates a pair only when its observed ranks differ. Thus two
+censored items produce no comparison. The Count-BA relation is closed
+transitively, including chains whose comparisons use different pivots. Pivot
+selection uses an exact maximum lower confidence bound with uniform tie breaking.
+After the first MNL acceptance, an accepted real arm replaces the no-choice pivot
+if the ordinary pivot rule returns no candidate.
+
+Acceptance and rejection use the pre-round thresholds. Cardinality guards are
+applied in ascending arm order and their activations are checkpointed. Acceptance
+requires fewer than k accepted arms; rejection requires more than k remaining
+accepted-or-unknown arms. Once k arms are accepted, the unknown set is cleared
+and that assortment is played for the remaining horizon. The additional
+pivot-based acceptance rule examines the pre-round unknown set.
+
+For positive observation count N, both UIF variants use:
+
+```text
+beta(N) = sqrt(log(2*n*T/delta) / N),   delta = 0.05.
+```
+
+There is no multiplicative rescaling. Set beta(0)=infinity and beta(infinity)=0
+for diagonal self-comparisons. The horizon T is fixed in each configuration.
+The choice delta=0.05 is an experimental setting; the paper's horizon-dependent
+regret guarantee uses delta=1/T.
 
 ## Baselines
 
-**Saha–Gaillard.** `AOARB` uses the original empirical-Bernstein radius
-sqrt(2 p-hat (1-p-hat) x/N) + 3x/N, with x=2 log(T), and either direct ratios to
-no-choice or the minimum product through all intermediate pivots. The legacy
-`algorithms.py:1497,1504,1512` clips upper probabilities to 1-1e-12, turning
-infinite optimism into large finite ratios. Products then distinguish arms that
-should tie at infinity, changing exploration. The new implementation uses exact
-infinity for unobserved/saturated bounds, diagonal ratios one, and random exact
-ties. This intentionally corrects the baseline and may change its curve.
-Source: [ICLR 2025 original](https://proceedings.iclr.cc/paper_files/paper/2025/file/b9a4d7b88a41652c63962ebcc21701b7-Paper-Conference.pdf),
-Equation (3), Algorithm 1, Section 4 (printed pages 6 and 9).
+**RecMaxMinUCB.** `experiment_code/recmaxmin.py` contains the recursive baseline
+extracted without algorithm changes from the original implementation at revision
+`dbd226e`. The EWS adapter in `experiment_code/algorithms.py` supplies injected
+randomness, checkpoint state, and exact maximum-score tie breaking. It uses full
+ranking feedback, k=m=3, and alpha=0.51. The subset-construction routine is a
+cardinality-preserving interpretation of the published pseudocode: it selects
+Condorcet candidates individually, recomputes after each selection, then uses
+max-min completion. The original printed routine contains ambiguous loop and
+set updates, so this implementation is not claimed to be a literal transcription.
+Source: [Saha and Gopalan, 2019](https://arxiv.org/pdf/1903.00543), Algorithms 2–3.
 
-**RecMaxMinUCB.** Reuse the original repository's recursive construction through
-a small EWS subclass; save W, time and ordered B slots. Use full ranking k=m=3
-and alpha=.51. Replace approximate score ties (`algorithms.py:984`) with exact
-maximizers. The inherited build-S routine is a cardinality-preserving
-interpretation, not a verified literal transcription: the original printed
-routine has ambiguous loop/set updates, while legacy selects Condorcet candidates
-individually and recomputes after each. Source:
-[Saha–Gopalan arXiv v2](https://arxiv.org/pdf/1903.00543), Definition 1(ii),
-Algorithm 2 (printed page 21), Algorithm 3 (printed page 40).
+**AOA-RB-PL and AOA-RB-PL-Adaptive.** Pairwise probability bounds use the original
+empirical-Bernstein radius:
 
-All instances have positive normalized preferences and a unique top-k set;
-internal ties in the n=10 instance are allowed. Boundary gaps are .10, .10 and
-.15 respectively. No redesign of the proposed algorithms or theorem is implied.
+```text
+sqrt(2*p_hat*(1-p_hat)*x/N) + 3*x/N,   x = 2*log(T).
+```
 
-## Verification
+Unobserved or saturated probability bounds give infinite parameter-ratio bounds;
+diagonal ratios are one. The direct method uses ratios to no-choice, while the
+adaptive method minimizes the product through all intermediate pivots. Infinite
+score ties are randomized. Ratios are not clipped to arbitrary finite constants.
+Source: [Saha and Gaillard, 2025](https://proceedings.iclr.cc/paper_files/paper/2025/file/b9a4d7b88a41652c63962ebcc21701b7-Paper-Conference.pdf),
+Equation (3), Algorithm 1, and Section 4.
 
-`tests/test_ews.py` checks deterministic continuation for all five learner modes,
-the no-choice fallback, terminal clearing, censored-pair rank breaking, PL winner
-frequencies, and infinite baseline ties. The 36-run smoke configuration exercises
-EWS instance persistence, checkpoints, complete-action regret, aggregation,
-retention and all three TikZ outputs. See the sibling paper task
-`tasks/014_ews_tikz_experiments/task.md` for execution results and the cloud run ID.
+## Sampling, measurement, and reproducibility
+
+An exponential race samples the PL ranking law. MNL feedback selects the winner
+among the real assortment and no-choice item. All configured preference vectors
+are positive, normalized, and have a unique top-k set; internal ties are allowed.
+The three top-k boundary gaps are 0.10, 0.10, and 0.15, respectively.
+
+The learner receives rankings only. Evaluation computes regret from the saved
+instance and every action, retains 200 exact cumulative-regret points per run, then aggregates independent repetitions using mean
+and SEM. EWS owns random-stream persistence; learner checkpoints contain all
+other mutable decision state. `tests/test_ews.py` checks checkpoint continuation,
+rank breaking, transitive comparisons, pivot handling, and infinite optimism.
+
+The current configuration uses root seed 54173, 12 independent repetitions per
+setting, and T=2,000,000. Outputs from different source revisions or configurations
+have distinct scientific identities and must not be relabeled as this study.

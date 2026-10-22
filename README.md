@@ -73,10 +73,12 @@ checksums are recorded in `reference_results/provenance.json`.
 If you use this code in a scientific publication, please cite:
 
 ```bibtex
-@misc{migali2026ranking,
+@inproceedings{migali2026ranking,
   title={Worst-Case Regret Bounds for Combinatorial Bandits with Ranking Feedback},
   author={Migali, Cristiano and Genalti, Gianmarco and Metelli, Alberto Maria and Mussi, Marco},
-  year={2026}
+  booktitle={Advances in Neural Information Processing Systems},
+  year={2026},
+  note={To appear}
 }
 ```
 

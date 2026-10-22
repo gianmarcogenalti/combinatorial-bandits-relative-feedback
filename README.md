@@ -48,7 +48,10 @@ learner and environment and checkpoints their states. Regret is the cumulative
 difference between the average preference of the optimal k arms and that of
 the played assortment, also for MNL. It is computed from every recorded action
 before temporal downsampling. Aggregates report the empirical mean and pointwise
-standard error of the mean (SEM) over independent repetitions.
+standard error of the mean (SEM) over independent repetitions. The figure
+exporter uses these aggregates to construct pointwise 95% Student-t confidence
+intervals for the mean: `mean ± t(0.975, N-1) * SEM`. With 20 repetitions,
+the critical value is approximately 2.093.
 
 ## Outputs and figures
 
@@ -63,8 +66,8 @@ output directory. The three native PGFPlots fragments are exported under
 The fragments inherit the enclosing LaTeX document's fonts. Load `pgfplots`,
 load its `fillbetween` library and `fix-cm`, and set `\pgfplotsset{compat=1.18}` before
 including a fragment with `\input{PATH/NAME.tikz}`. Bands and error bars are
-mean ± SEM. Saved aggregate curves contain 200 time points, including both
-endpoints.
+pointwise 95% confidence intervals for the mean. Saved aggregate curves contain
+200 time points, including both endpoints.
 
 To update figure formatting from compatible saved analysis:
 
@@ -81,13 +84,13 @@ New metrics requiring discarded trajectories require a new run.
 
 ```bash
 python -m pip install pytest
-python -m pytest -q tests/test_ews.py
+python -m pytest -q tests/
 ```
 
 ## Saved results
 
 The checked-in [reference results](reference_results/) contain the aggregate
-curves from all 360 completed trials, final mean/SEM values, and the three paper
-figures. Source/configuration provenance and file checksums are recorded in
+curves from all 360 completed trials, final means with SEM and 95% confidence
+limits, and the three paper figures. Source/configuration provenance and file checksums are recorded in
 `reference_results/provenance.json`. Use the matching source and pinned
 dependencies when reproducing those curves.

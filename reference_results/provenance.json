@@ -1,0 +1,26 @@
+{
+  "experiment_commit": "9727bbe462a91a0ed7585673c07a3c192bc50c8d",
+  "ews_commit": "4ba0dd60e43e8dabae5b5f879cde01f6765418db",
+  "seed": 104729,
+  "horizon": 1000000,
+  "repetitions_per_setting": 20,
+  "independent_runs": 360,
+  "confidence_radius": "sqrt(log(2*n*T/delta)/N)",
+  "delta": 0.05,
+  "uncertainty": "sample standard deviation / sqrt(20)",
+  "points_per_aggregate": 200,
+  "validation": "All 360 runs completed; means and SEM independently recomputed from all 20 retained per-run curves for every aggregate.",
+  "files": {
+    "figures/cumulative_regret.tikz": "187c7546e509b371b00a26858645dc1245db480c233237b7000a264e22da0ddd",
+    "figures/final_regret_vs_m.tikz": "7a62df678da2d1e7b3f4a2082929415ec3b69b5914aabb4f1c53c3d896f0f5c5",
+    "figures/final_regret_vs_theta0.tikz": "8b4fb252bac7c675742f6f1ab6234608c3b61663539a0aff8bc0ff3a9923f1fd",
+    "final_regret.csv": "f32ecd64db304d4b3ac775ba9d4867c9a630013b6ba2a2eaf0905e6660f57952",
+    "regret.csv": "2024f10a23e9f691dff4ed390be0fe1e2b8a0e9794852b32c02468a2e01977e1"
+  },
+  "experiment_config_sha256": "5aee072615a1617638e3aa9715809866ad8ab85acec3d3bf7c08cb267defe716",
+  "requirements_sha256": "dfa8b465f9ab4e7df5ebfe126a6dacf575543fd5cc99cfba7c1167558582f534",
+  "csv_serialization": "LF line endings; all numerical fields unchanged from the EWS CSV export",
+  "figure_export_commit": "18a3b61ff206e3a9df3c1dd5252762c965544ef2",
+  "figure_exporter_sha256": "a756fa352fd84c7c9cbe46e3cc6f56d346d15158efbe0457e391a970d721ab60",
+  "figure_formatting": "Comparison legend moved into empty inter-curve space; numerical coordinates unchanged from the validated EWS export."
+}

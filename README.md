@@ -39,7 +39,7 @@ rounds for each setting and algorithm, totaling 360 runs:
 The comparison uses two arms of weight 1 and 398 arms of weight 0.05.
 The MNL comparison studies the small-no-choice regime shown in the table.
 The preference vectors and all algorithm parameters are explicit in the
-configuration. UIF uses the unscaled radius `sqrt(log(2*n*T/delta)/N)` with
+configuration. UIF uses the confidence radius `sqrt(log(2*n*T/delta)/N)` with
 `delta=0.05`, infinite radius for unobserved pairs, and zero radius for diagonal
 self-comparisons. [Implementation notes](ALGORITHM_AUDIT.md) describe the
 algorithm conventions and baseline provenance.
@@ -86,11 +86,6 @@ python -m pytest -q tests/test_ews.py
 ```
 
 ## Saved results
-
-Saved outputs are identified by their source revision and configuration. Use a
-fresh output directory for this configuration; outputs from earlier revisions
-may use different parameters and must not be mixed with this study. Earlier
-source revisions remain available in Git history; existing results are preserved.
 
 The checked-in [reference results](reference_results/) contain the aggregate
 curves from all 360 completed trials, final mean/SEM values, and the three paper

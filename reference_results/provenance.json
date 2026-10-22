@@ -22,5 +22,5 @@
   "csv_serialization": "LF line endings; all numerical fields unchanged from the EWS CSV export",
   "figure_export_commit": "18a3b61ff206e3a9df3c1dd5252762c965544ef2",
   "figure_exporter_sha256": "a756fa352fd84c7c9cbe46e3cc6f56d346d15158efbe0457e391a970d721ab60",
-  "figure_formatting": "Comparison legend moved into empty inter-curve space; numerical coordinates unchanged from the validated EWS export."
+  "figure_formatting": "Native PGFPlots fragments with common axis geometry and compact legends."
 }

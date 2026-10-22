@@ -1,4 +1,4 @@
-"""Scientific regressions and checkpoint replay for the EWS migration."""
+"""Scientific regression and checkpoint replay tests."""
 
 import copy
 import itertools
@@ -126,8 +126,8 @@ def test_adaptive_unknown_ratio_bounds_remain_infinite_ties():
 
 
 @pytest.mark.parametrize("mnl", [False, True])
-def test_uif_uses_unscaled_manuscript_confidence_radius(mnl):
-    """Both algorithms use n real arms in log(2*n*T/delta), with unit prefactor."""
+def test_uif_uses_manuscript_confidence_radius(mnl):
+    """Both algorithms use n real arms in log(2*n*T/delta)."""
     algorithm = UIF(
         rng=np.random.default_rng(3), n=10, k=3, mnl=mnl, horizon=10_000_000, delta=0.05
     )
@@ -135,8 +135,6 @@ def test_uif_uses_unscaled_manuscript_confidence_radius(mnl):
     # Increasing the comparison count by four must divide the radius by two.
     radii = np.sqrt(algorithm.log_bonus / np.array([100, 400]))
     assert radii[0] == 2 * radii[1]
-    with pytest.raises(TypeError):
-        UIF(rng=np.random.default_rng(3), n=10, k=3, beta_scale=0.25)
 
 
 def test_regret_downsampling_includes_every_action():

@@ -5,6 +5,58 @@ import numpy as np
 from .recmaxmin import RecMaxMinUCB as LegacyRecMaxMinUCB
 
 
+def _comparison_counts(lower, upper):
+    """Count strict certified comparisons; close cross-pivot chains exactly."""
+    if len(lower) == 1:
+        # An interval order is already transitive: L_i > U_j >= L_j > U_h.
+        lo, hi = lower[0], upper[0]
+        worse = np.searchsorted(np.sort(hi), lo, side="left")
+        better = len(lo) - np.searchsorted(np.sort(lo), hi, side="right")
+        return worse, better
+    precedes = np.any(lower[:, :, None] > upper[:, None, :], axis=0)
+    for j in range(precedes.shape[0]):
+        precedes |= precedes[:, j, None] & precedes[j, None, :]
+    np.fill_diagonal(precedes, False)
+    return precedes.sum(axis=1), precedes.sum(axis=0)
+
+
+class LazyUCB:
+    """Evaluate queried entries using the original baseline's UCB expression."""
+
+    def __init__(self, owner, round_number):
+        self.owner = owner
+        self.log_t = np.log(max(int(round_number), 1))
+        self.shape = (owner.n, owner.n)
+
+    def __getitem__(self, key):
+        if (
+            not isinstance(key, tuple)
+            or len(key) != 2
+            or any(isinstance(k, slice) for k in key)
+        ):
+            return self.copy()[key]
+        rows, cols = np.broadcast_arrays(np.asarray(key[0]), np.asarray(key[1]))
+        wins = self.owner.W[rows, cols]
+        counts = wins + self.owner.W[cols, rows]
+        positive = counts > 0
+        mean = np.full(counts.shape, 0.5)
+        mean[positive] = wins[positive] / counts[positive]
+        upper = np.full(counts.shape, np.inf)
+        upper[positive] = mean[positive] + np.sqrt(
+            self.owner.alpha * self.log_t / counts[positive]
+        )
+        upper[rows == cols] = 0.5
+        return upper
+
+    def copy(self):
+        arms = np.arange(self.owner.n)
+        return self[np.ix_(arms, arms)]
+
+    def __array__(self, dtype=None):
+        values = self.copy()
+        return values if dtype is None else values.astype(dtype, copy=False)
+
+
 class UIF:
     """Algorithms 1/3 and their shared subroutines, using pre-round A, U and P.
 
@@ -65,13 +117,9 @@ class UIF:
         with np.errstate(divide="ignore"):
             bonus = np.sqrt(self.log_bonus / counts)
         lower, upper = means - bonus, means + bonus
-        precedes = np.any(lower[:, :, None] > upper[:, None, :], axis=0)
-        # Boolean Floyd-Warshall computes the Count-BA transitive closure.
-        for j in range(len(unknown)):
-            precedes |= precedes[:, j, None] & precedes[j, None, :]
-        np.fill_diagonal(precedes, False)
-        reject = precedes.sum(axis=0) >= self.k - old_a.sum()
-        accept = (~reject) & (precedes.sum(axis=1) >= (old_a | old_u).sum() - self.k)
+        worse, better = _comparison_counts(lower, upper)
+        reject = better >= self.k - old_a.sum()
+        accept = (~reject) & (worse >= (old_a | old_u).sum() - self.k)
         # The displayed pseudocode omits the Appendix C cardinality guards.
         for arm, rejected, accepted in zip(unknown, reject, accept):
             if rejected:
@@ -140,6 +188,13 @@ class RecMaxMinUCB(LegacyRecMaxMinUCB):
     def __init__(self, *, rng, n, k, m, alpha=0.51):
         super().__init__(n=n, k=k, m=m, alpha=alpha, seed=0)
         self.rng = rng
+        self._width = min(self.k, self.n)
+        self._top_indices = np.empty((self.n, self._width), dtype=np.int64)
+        self._top_values = np.empty((self.n, self._width))
+        self.boundary_rows = 0
+        self.fallback_calls = 0
+        self._max_count = 0.0
+        self._refresh_rows(np.arange(self.n))
 
     def act(self, context=None):
         return np.asarray(self.select_action(), dtype=np.int64)
@@ -148,6 +203,49 @@ class RecMaxMinUCB(LegacyRecMaxMinUCB):
         ranks = np.asarray(feedback)[action]
         self.W[np.ix_(action, action)] += ranks[:, None] < ranks[None, :]
         self.t += 1
+        self._refresh_rows(action)
+
+    def _condorcet_candidates(self, U, pool):
+        if not isinstance(U, LazyUCB):
+            return super()._condorcet_candidates(U, pool)
+        arms = np.asarray(sorted(pool), dtype=np.int64)
+        if not len(arms):
+            return set()
+        # Every actual inherited pool omits <= k-1 selected arms. At t=1,
+        # p=.5 has strict UCB=.5 rather than >.5; use the literal predicate.
+        if self.n - len(arms) >= self._width or U.log_t == 0:
+            self.fallback_calls += 1
+            beats = U[np.ix_(arms, arms)] > 0.5
+            np.fill_diagonal(beats, True)
+            return set(map(int, arms[np.all(beats, axis=1)]))
+        present = np.zeros(self.n, dtype=bool)
+        present[arms] = True
+        indices = self._top_indices[arms]
+        values = np.where(present[indices], self._top_values[arms], -np.inf)
+        slot = np.argmax(values, axis=1)
+        maximum = values[np.arange(len(arms)), slot]
+        witnesses = indices[np.arange(len(arms)), slot]
+        accepted = np.ones(len(arms), dtype=bool)
+        finite = np.isfinite(maximum)
+        if finite.any():
+            positions = np.flatnonzero(finite)
+            score = U[arms[positions], witnesses[positions]]
+            accepted[positions] = score > 0.5
+            guard = (
+                128
+                * np.finfo(float).eps
+                * (1 + np.sqrt(self._max_count / (self.alpha * U.log_t)))
+            )
+            near = (np.abs(score - 0.5) <= guard) | np.isclose(
+                maximum[positions], U.log_t, rtol=1e-12, atol=1e-12
+            )
+            if near.any():
+                affected = positions[near]
+                literal = U[np.ix_(arms[affected], arms)] > 0.5
+                literal[arms[affected, None] == arms[None, :]] = True
+                accepted[affected] = np.all(literal, axis=1)
+                self.boundary_rows += len(affected)
+        return set(map(int, arms[accepted]))
 
     def _choose_one(self, candidates, *, U, selected):
         choices = np.asarray(sorted(candidates))
@@ -164,6 +262,42 @@ class RecMaxMinUCB(LegacyRecMaxMinUCB):
         self.t = int(state["t"])
         self.B_slots = [set(s) for s in state["B_slots"]]
         self._last_action = None
+        self._max_count = 0.0
+        self._refresh_rows(np.arange(self.n))
+
+    def _refresh_rows(self, rows):
+        # Only played rows change. Each selection pool omits at most k-1 arms,
+        # so its largest threshold survives among the cached k largest entries.
+        # Thresholds locate witnesses; decisions use literal UCBs, with full-row
+        # checks near floating-point boundaries. Caches rebuild on restore.
+        rows = np.asarray(rows, dtype=np.int64)
+        if not len(rows):
+            return
+        wins = self.W[rows, :]
+        counts = wins + self.W[:, rows].T
+        positive = counts > 0
+        self._max_count = max(self._max_count, float(np.max(counts)))
+        mean = np.full(counts.shape, 0.5)
+        mean[positive] = wins[positive] / counts[positive]
+        critical = np.full(counts.shape, -np.inf)
+        below = positive & (mean <= 0.5)
+        critical[below] = counts[below] * (0.5 - mean[below]) ** 2 / self.alpha
+        critical[np.arange(len(rows)), rows] = -np.inf
+        if self._width == self.n:
+            indices = np.broadcast_to(np.arange(self.n), critical.shape)
+        else:
+            indices = np.argpartition(critical, self.n - self._width, axis=1)[
+                :, -self._width :
+            ]
+        self._top_indices[rows] = indices
+        self._top_values[rows] = np.take_along_axis(critical, indices, axis=1)
+
+    def _ucb_matrix(self, round_number):
+        return LazyUCB(self, round_number)
+
+    def update(self, result):
+        super().update(result)
+        self._refresh_rows(result.pulled_arms)
 
 
 class AOARB:

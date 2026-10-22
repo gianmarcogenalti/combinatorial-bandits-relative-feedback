@@ -1,12 +1,14 @@
 """Scientific regressions and checkpoint replay for the EWS migration."""
 
 import copy
+import itertools
 
 import numpy as np
 import pytest
 
 from experiment_code.algorithms import AOARB, UIF, RecMaxMinUCB
 from experiment_code.data import RankingBandit
+from experiment_code.recmaxmin import RecMaxMinUCB as LegacyRecMaxMinUCB
 
 
 def make_data(n=10, k=3, m=3, mnl=False):
@@ -152,3 +154,128 @@ def test_regret_downsampling_includes_every_action():
     curve = TopKRegret(points=2).compute(result)
     np.testing.assert_array_equal(curve.x, [1, 5])
     np.testing.assert_allclose(curve.values, [0.0, 0.9])
+
+
+@pytest.mark.parametrize("n", [1, 10, 50])
+def test_single_pivot_interval_counts_equal_general_closure(n):
+    from experiment_code.algorithms import _comparison_counts
+
+    rng = np.random.default_rng(5)
+    for _ in range(30):
+        lo = rng.normal(size=n)
+        hi = lo + rng.exponential(size=n)
+        lo[0] = hi[0] = 0.5  # The pivot has an exact self-comparison.
+        if n > 1:
+            lo[1], hi[1] = -np.inf, np.inf
+        edges = lo[:, None] > hi[None, :]
+        for j in range(n):
+            edges |= edges[:, j, None] & edges[j, None, :]
+        actual_a, actual_b = _comparison_counts(lo[None, :], hi[None, :])
+        np.testing.assert_array_equal(actual_a, edges.sum(axis=1))
+        np.testing.assert_array_equal(actual_b, edges.sum(axis=0))
+
+
+def test_vectorized_recursive_candidates_match_strict_published_predicate():
+    rng = np.random.default_rng(4)
+    alg = RecMaxMinUCB(rng=rng, n=20, k=3, m=3)
+    for _ in range(50):
+        u = rng.choice([0.0, 0.5, 0.75, np.inf], size=(20, 20))
+        pool = set(map(int, rng.choice(20, size=10, replace=False)))
+        expected = {i for i in pool if all(u[i, j] > 0.5 for j in pool if i != j)}
+        assert alg._condorcet_candidates(u, pool) == expected
+    assert alg._condorcet_candidates(u, set()) == set()
+
+
+class DenseRecMaxMinUCB(RecMaxMinUCB):
+    """Literal baseline UCBs/predicate as an independent optimization oracle."""
+
+    _ucb_matrix = LegacyRecMaxMinUCB._ucb_matrix
+    _condorcet_candidates = LegacyRecMaxMinUCB._condorcet_candidates
+
+
+@pytest.mark.parametrize("k", [2, 3, 5])
+def test_lazy_scores_and_strict_predicates_at_float_boundaries(k):
+    rng = np.random.default_rng(118 + k)
+    n, t = 12, 17003
+    base = DenseRecMaxMinUCB(rng=np.random.default_rng(1), n=n, k=k, m=k)
+    for i in range(n):
+        for j in range(i):
+            N = float(rng.choice([200, 10000, 1e12, 2**52]))
+            p = 0.5 - np.sqrt(base.alpha * np.log(t + 1) / N)
+            for _ in range(int(rng.integers(0, 8))):
+                p = np.nextafter(p, rng.choice([-np.inf, np.inf]))
+            base.W[i, j], base.W[j, i] = p * N, (1 - p) * N
+    base.t = t
+    fast = RecMaxMinUCB(rng=np.random.default_rng(1), n=n, k=k, m=k)
+    fast.load_state_dict(base.state_dict())
+    literal, lazy = base._ucb_matrix(t + 1), fast._ucb_matrix(t + 1)
+    np.testing.assert_array_equal(literal, np.asarray(lazy))
+    for omitted_count in range(min(k, 4)):
+        for omitted in itertools.combinations(range(n), omitted_count):
+            pool = set(range(n)) - set(omitted)
+            assert base._condorcet_candidates(
+                literal, pool
+            ) == fast._condorcet_candidates(lazy, pool)
+    for pool in [{0}, {0, 2, 5}, set()]:
+        assert base._condorcet_candidates(literal, pool) == fast._condorcet_candidates(
+            lazy, pool
+        )
+    np.testing.assert_array_equal(base._ucb_matrix(1), np.asarray(fast._ucb_matrix(1)))
+    pool = set(range(n))
+    assert base._condorcet_candidates(
+        base._ucb_matrix(1), pool
+    ) == fast._condorcet_candidates(fast._ucb_matrix(1), pool)
+    assert fast.boundary_rows > 0
+
+
+@pytest.mark.parametrize("k,seed", [(2, 0), (2, 1), (3, 0), (3, 1)])
+def test_actual_pl_10000_rounds_and_checkpoint_continuation(k, seed):
+    n = 32
+    theta = np.array([1.0] * k + [0.05] * (n - k))
+    base = DenseRecMaxMinUCB(rng=np.random.default_rng(seed + 21), n=n, k=k, m=k)
+    fast = RecMaxMinUCB(rng=np.random.default_rng(seed + 21), n=n, k=k, m=k)
+    env = np.random.default_rng(seed + 31)
+    for t in range(10000):
+        a, b = base.act(), fast.act()
+        np.testing.assert_array_equal(a, b)
+        order = np.argsort(env.exponential(1 / theta[a]))
+        ranks = np.full(n, k, dtype=int)
+        ranks[a[order]] = np.arange(1, k + 1)
+        base.observe(a, ranks)
+        fast.observe(b, ranks)
+        assert base.t == fast.t and base.B_slots == fast.B_slots
+        if t % 100 == 0:
+            np.testing.assert_array_equal(base.W, fast.W)
+        if t == 4000:
+            state = copy.deepcopy(fast.state_dict())
+            rngstate = copy.deepcopy(fast.rng.bit_generator.state)
+            fast = RecMaxMinUCB(rng=np.random.default_rng(999), n=n, k=k, m=k)
+            fast.load_state_dict(state)
+            fast.rng.bit_generator.state = rngstate
+    np.testing.assert_array_equal(base.W, fast.W)
+    assert base.rng.bit_generator.state == fast.rng.bit_generator.state
+
+
+def test_cancellation_can_hide_a_second_comparison_at_huge_counts():
+    """A smaller real-valued threshold can still round to the strict .5 tie."""
+    n, k = 4, 2
+    base = DenseRecMaxMinUCB(rng=np.random.default_rng(1), n=n, k=k, m=k)
+    d = 2.0**-26
+    N2 = float(3 * 2**54)
+    C2 = N2 * d * d / base.alpha
+    round_number = int(np.ceil(np.exp(C2 + 2e-9)))
+    log_t = np.log(round_number)
+    p1, p2 = 0.1, 0.5 - d
+    N1 = base.alpha * (log_t - 1e-9) / (0.5 - p1) ** 2
+    base.W[0, 1], base.W[1, 0] = p1 * N1, (1 - p1) * N1
+    base.W[0, 2], base.W[2, 0] = p2 * N2, (1 - p2) * N2
+    base.t = round_number - 1
+    fast = RecMaxMinUCB(rng=np.random.default_rng(1), n=n, k=k, m=k)
+    fast.load_state_dict(base.state_dict())
+    literal, lazy = base._ucb_matrix(round_number), fast._ucb_matrix(round_number)
+    assert literal[0, 1] > 0.5 and literal[0, 2] == 0.5
+    pool = set(range(n))
+    assert base._condorcet_candidates(literal, pool) == fast._condorcet_candidates(
+        lazy, pool
+    )
+    assert fast.boundary_rows > 0

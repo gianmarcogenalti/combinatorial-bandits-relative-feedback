@@ -1,12 +1,6 @@
 .venv/
-# Ignore everything inside results
-results/**
-
-# But keep result PDF folders and PDFs
-!results/
-!results/*/
-!results/*/pdf_plots/
-!results/*/pdf_plots/*.pdf
+# Legacy local results are not part of the paper reproduction.
+results/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

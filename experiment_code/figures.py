@@ -52,7 +52,7 @@ class PaperFigures:
                 "xtick pos=left",
                 "ytick pos=left",
                 r"ylabel={Cumulative Top-$k$ Regret}",
-                r"legend style={font=\fontsize{4.2}{5.2}\selectfont,draw=gray!35,fill=white,cells={anchor=west},inner xsep=1pt,inner ysep=0.5pt,row sep=0pt}",
+                r"legend style={font=\fontsize{4.2}{5.2}\selectfont,draw=gray!35,fill=white,cells={anchor=west,inner xsep=0.5pt,inner ysep=0.5pt},inner xsep=1pt,inner ysep=0.5pt,row sep=0pt}",
                 "legend image post style={xscale=0.5}",
             ]
             if group == "comparison":
@@ -76,12 +76,19 @@ class PaperFigures:
                     (s.labels["algorithm.name"], s.x, s.mean, s.uncertainty)
                     for s in selected
                 ]
+                if max(float(np.max(s.mean)) for s in selected) >= 10000:
+                    options += [
+                        "scaled y ticks=base 10:-3",
+                        "ytick scale label code/.code={}",
+                        r"ylabel={Cumulative Top-$k$ Regret ($10^3$)}",
+                    ]
             else:
                 key = "data.params.m" if group == "feedback" else "data.params.theta0"
+                values = sorted({s.labels[key] for s in selected})
                 options += (
                     [
                         r"xlabel={Feedback Level $m$}",
-                        "xtick={1,2,3,6}",
+                        "xtick={" + ",".join(f"{v:.12g}" for v in values) + "}",
                         "ymin=0",
                         "scaled y ticks=false",
                         "yticklabel style={/pgf/number format/1000 sep={}}",
@@ -91,7 +98,11 @@ class PaperFigures:
                         r"xlabel={``No-Choice'' Parameter $\theta_0$}",
                         "xmode=log",
                         "ymode=log",
-                        "legend pos=north east",
+                        "xtick={" + ",".join(f"{v:.12g}" for v in values) + "}",
+                        "xticklabels={"
+                        + ",".join(self._log_tick_label(v) for v in values)
+                        + "}",
+                        "legend style={at={(0.02,0.24)},anchor=south west}",
                     ]
                 )
                 series = []
@@ -108,6 +119,15 @@ class PaperFigures:
                             np.array([s.uncertainty[-1] for s in rows]),
                         )
                     )
+            if (
+                group == "feedback"
+                and max(float(s.mean[-1]) for s in selected) >= 10000
+            ):
+                options += [
+                    "scaled y ticks=base 10:-3",
+                    "ytick scale label code/.code={}",
+                    r"ylabel={Cumulative Top-$k$ Regret ($10^3$)}",
+                ]
             lines.append(r"\begin{axis}[" + ",\n".join(options) + "]")
             styles = {
                 "topk_uif": ("paperblue,solid", r"\textsc{Top-$k$-UIF}"),
@@ -164,3 +184,11 @@ class PaperFigures:
             path.write_text("\n".join(lines))
             files.append(path)
         return files
+
+    @staticmethod
+    def _log_tick_label(value):
+        """Label every configured log-grid point, including non-decade values."""
+        exponent = int(np.floor(np.log10(value)))
+        mantissa = value / 10**exponent
+        prefix = "" if np.isclose(mantissa, 1) else rf"{mantissa:g}\cdot "
+        return rf"${prefix}10^{{{exponent}}}$"

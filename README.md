@@ -27,22 +27,24 @@ ews inspect outputs/paper
 
 ## Experimental design
 
-`experiment.yml` specifies 12 independent repetitions and a horizon of 2,000,000
-rounds for each setting and algorithm, totaling 216 runs:
+`experiment.yml` specifies 20 independent repetitions and a horizon of 1,000,000
+rounds for each setting and algorithm, totaling 360 runs:
 
 | Study | Arms n | Assortment size k | Feedback | Algorithms |
 | --- | ---: | ---: | --- | --- |
-| Comparison | 10 | 3 | Full ranking, m=3 | Top-k-UIF; RecMaxMinUCB |
+| Comparison | 400 | 2 | Full ranking, m=2 | Top-k-UIF; RecMaxMinUCB |
 | Feedback sensitivity | 16 | 6 | m in {1,2,3,6} | Top-k-UIF |
-| MNL | 30 | 5 | Winner feedback; theta0 in {0.001,0.01,0.1,1} | MNL-Top-k-UIF; AOA-RB-PL; AOA-RB-PL-Adaptive |
+| MNL | 30 | 5 | Winner feedback; theta0 in {0.001,0.003,0.01,0.03} | MNL-Top-k-UIF; AOA-RB-PL; AOA-RB-PL-Adaptive |
 
+The comparison uses two arms of weight 1 and 398 arms of weight 0.05.
+The MNL comparison studies the small-no-choice regime shown in the table.
 The preference vectors and all algorithm parameters are explicit in the
 configuration. UIF uses the unscaled radius `sqrt(log(2*n*T/delta)/N)` with
 `delta=0.05`, infinite radius for unobserved pairs, and zero radius for diagonal
 self-comparisons. [Implementation notes](ALGORITHM_AUDIT.md) describe the
 algorithm conventions and baseline provenance.
 
-The root seed is 54173. EWS supplies separate reproducible NumPy streams for the
+The root seed is 104729. EWS supplies separate reproducible NumPy streams for the
 learner and environment and checkpoints their states. Regret is the cumulative
 difference between the average preference of the optimal k arms and that of
 the played assortment, also for MNL. It is computed from every recorded action
@@ -81,12 +83,7 @@ New metrics requiring discarded trajectories require a new run.
 ```bash
 python -m pip install pytest
 python -m pytest -q tests/test_ews.py
-ews run experiment.smoke.yml --output outputs/smoke --workers 2
 ```
-
-The smoke configuration runs two short repetitions of every setting/algorithm
-combination to check execution, persistence, analysis, and figure export. It does
-not reproduce the full-horizon scientific results.
 
 ## Saved results
 
@@ -95,8 +92,6 @@ fresh output directory for this configuration; outputs from earlier revisions
 may use different parameters and must not be mixed with this study. Earlier
 source revisions remain available in Git history; existing results are preserved.
 
-The checked-in [reference results](reference_results/) contain the aggregate
-curves, final mean/SEM values, native figures, and source/configuration provenance
-for the completed 216-run study. They use the unscaled bounds above. Reproduction
-with the pinned source and dependencies should agree with these results; see
-`reference_results/provenance.json` for source revisions and file checksums.
+The paper reference results are stored in `reference_results/`, together with
+source/configuration provenance and file checksums. Use the matching source and
+pinned dependencies when reproducing those curves.

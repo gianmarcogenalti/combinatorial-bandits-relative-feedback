@@ -41,8 +41,7 @@ The MNL comparison studies the small-no-choice regime shown in the table.
 The preference vectors and all algorithm parameters are explicit in the
 configuration. UIF uses the confidence radius `sqrt(log(2*n*T/delta)/N)` with
 `delta=0.05`, infinite radius for unobserved pairs, and zero radius for diagonal
-self-comparisons. [Implementation notes](ALGORITHM_AUDIT.md) describe the
-algorithm conventions and baseline provenance.
+self-comparisons.
 
 The root seed is 104729. EWS supplies separate reproducible NumPy streams for the
 learner and environment and checkpoints their states. Regret is the cumulative

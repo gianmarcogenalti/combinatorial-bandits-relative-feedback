@@ -151,3 +151,5 @@ analysis:
   - name: paper
     type: experiment_code.figures:PaperFigures
     metric: regret
+    params:
+      confidence_level: 0.95

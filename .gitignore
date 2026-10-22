@@ -1,5 +1,5 @@
 .venv/
-# Legacy local results are not part of the paper reproduction.
+# Local experiment outputs.
 results/
 
 # Byte-compiled / optimized / DLL files

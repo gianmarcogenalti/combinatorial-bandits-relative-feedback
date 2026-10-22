@@ -61,7 +61,7 @@ class UIF:
     """Algorithms 1/3 and their shared subroutines, using pre-round A, U and P.
 
     Rows of counts/wins correspond to pivots. No-choice is indexed by n.
-    Confidence radii are sqrt(log(2*n*T/delta)/N), without rescaling. Guards follow
+    Confidence radii are sqrt(log(2*n*T/delta)/N). Guards follow
     Appendix C, using ascending arm order; activations are counted in checkpoints.
     """
 
@@ -303,8 +303,8 @@ class RecMaxMinUCB(LegacyRecMaxMinUCB):
 class AOARB:
     """Saha-Gaillard pairwise-ratio optimism with optional intermediate pivots.
 
-    Saturated probability bounds yield infinite ratios as in the paper, rather
-    than arbitrary large finite proxies. The no-choice ratio to itself is one.
+    Saturated probability bounds yield infinite ratios.
+    The no-choice ratio to itself is one.
     """
 
     supports_extension = False

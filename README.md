@@ -92,6 +92,8 @@ fresh output directory for this configuration; outputs from earlier revisions
 may use different parameters and must not be mixed with this study. Earlier
 source revisions remain available in Git history; existing results are preserved.
 
-The paper reference results are stored in `reference_results/`, together with
-source/configuration provenance and file checksums. Use the matching source and
-pinned dependencies when reproducing those curves.
+The checked-in [reference results](reference_results/) contain the aggregate
+curves from all 360 completed trials, final mean/SEM values, and the three paper
+figures. Source/configuration provenance and file checksums are recorded in
+`reference_results/provenance.json`. Use the matching source and pinned
+dependencies when reproducing those curves.

@@ -1,0 +1,26 @@
+{
+  "seed": 104729,
+  "horizon": 1000000,
+  "repetitions_per_setting": 20,
+  "independent_runs": 40,
+  "verified_aggregate_points": 400,
+  "ews_commit": "4ba0dd60e43e8dabae5b5f879cde01f6765418db",
+  "validation": "All requested per-run metric checksums, completion states, repetition identities, means and sample SEM recomputed and checked.",
+  "confidence_level": 0.95,
+  "confidence_interval_formula": "mean +/- t.ppf(.975, count-1) * SEM",
+  "resolved_config_sha256": "e6c2c6f22097c775c68e3857ac23ad49278d8af4c29c6662977d65171b2ab0b4",
+  "csv_serialization": "LF line endings; numeric fields preserved verbatim",
+  "source_modules_sha256": {
+    "experiment_code/__init__.py": "1c2ade5969cbd0d2fb13f746d330098549e5546f72750dd83dbfbc8f7b2f50d6",
+    "experiment_code/algorithms.py": "bce0bca3c21b8f8347b6cdede09bc301db5bd79513e789509d829d5bd0a680d9",
+    "experiment_code/data.py": "5b02652920b287430583c20eeb836dc8339cc862752ad57503ab26870e39d472",
+    "experiment_code/figures.py": "38ed6151a56bd48dc54cf6a222fc39237a5121c19d403a9f3c08a18911af17eb",
+    "experiment_code/metrics.py": "1be23669721127e79238116ce97f72aa28f0b1bf47189ab134e68653c404c2ad",
+    "experiment_code/recmaxmin.py": "d25fb9508eb06f6eea07b66db0f33f36d61b0bb635a5f9f372894777c56e7e05"
+  },
+  "files": {
+    "figures/cumulative_regret.tikz": "cb13ae9df80cd0c7a15d2e9caacf677beded8c134cf4b26e5a92208a9966a57e",
+    "final_regret.csv": "0a5c2cfcd47866a493c588490b983b7acede6cb8473dfa8cd5cce753f1f85602",
+    "regret.csv": "3d5f8539da3474d0e1a0c56b236c3c40554d1f1d4aa4330b8d5c601b1e54f588"
+  }
+}

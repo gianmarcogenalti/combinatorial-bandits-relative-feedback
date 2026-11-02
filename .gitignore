@@ -224,3 +224,5 @@ __marimo__/
 # EWS generated artifacts and local environments
 outputs/
 .venv/
+
+.runtime/

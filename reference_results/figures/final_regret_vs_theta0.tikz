@@ -30,11 +30,11 @@ ymode=log,
 xtick={0.001,0.003,0.01,0.03},
 xticklabels={$10^{-3}$,$3\cdot 10^{-3}$,$10^{-2}$,$3\cdot 10^{-2}$},
 legend style={at={(0.02,0.24)},anchor=south west}]
-\addplot[paperblue,solid,line width=0.6pt,mark=*,mark size=0.85pt,error bars/.cd,y dir=both,y explicit,error mark options={mark size=1pt,line width=0.4pt}] coordinates {(0.001,18813.6663) +- (0,886.119186349) (0.003,18219.2919) +- (0,695.007909397) (0.01,18862.4701) +- (0,721.892696896) (0.03,18990.7474) +- (0,775.621724094)};
+\addplot[paperblue,solid,line width=0.6pt,mark=*,mark size=0.85pt,error bars/.cd,y dir=both,y explicit,error mark options={mark size=1pt,line width=0.4pt}] coordinates {(0.001,34201.1847001) +- (0,981.563030528) (0.003,34775.5236001) +- (0,1097.97515883) (0.01,34256.2264001) +- (0,856.492405135) (0.03,33664.4539001) +- (0,678.714663287)};
 \addlegendentry{\textsc{MNL-Top-$k$-UIF}}
-\addplot[paperorange,dashdotted,line width=0.6pt,mark=*,mark size=0.85pt,error bars/.cd,y dir=both,y explicit,error mark options={mark size=1pt,line width=0.4pt}] coordinates {(0.001,493337.0142) +- (0,53.3640047432) (0.003,257952.8967) +- (0,7965.10062326) (0.01,80777.6903) +- (0,2009.81426311) (0.03,31377.7754) +- (0,486.737542964)};
+\addplot[paperorange,dashdotted,line width=0.6pt,mark=*,mark size=0.85pt,error bars/.cd,y dir=both,y explicit,error mark options={mark size=1pt,line width=0.4pt}] coordinates {(0.001,463339.819) +- (0,72.8548856847) (0.003,260069.284099) +- (0,8330.92570263) (0.01,82123.8116982) +- (0,1895.80081701) (0.03,33472.0472003) +- (0,592.368198365)};
 \addlegendentry{\textsc{AOA-RB}$_{\mathrm{PL}}$-\textsc{Adaptive}}
-\addplot[papergreen,dashed,line width=0.6pt,mark=*,mark size=0.85pt,error bars/.cd,y dir=both,y explicit,error mark options={mark size=1pt,line width=0.4pt}] coordinates {(0.001,493343.7065) +- (0,59.5287456535) (0.003,384782.4614) +- (0,3305.34982317) (0.01,185216.5504) +- (0,2661.51441245) (0.03,80520.5880996) +- (0,1307.18122768)};
+\addplot[papergreen,dashed,line width=0.6pt,mark=*,mark size=0.85pt,error bars/.cd,y dir=both,y explicit,error mark options={mark size=1pt,line width=0.4pt}] coordinates {(0.001,463334.5281) +- (0,52.517663342) (0.003,359894.4304) +- (0,2874.77637413) (0.01,169503.4405) +- (0,2231.69364858) (0.03,72048.1578997) +- (0,1492.46259086)};
 \addlegendentry{\textsc{AOA-RB}$_{\mathrm{PL}}$}
 \end{axis}
 \pgfresetboundingbox

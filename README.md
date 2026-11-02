@@ -58,15 +58,25 @@ for a total of 360 runs.
 
 | Experiment | Setting | Algorithms |
 | --- | --- | --- |
-| Ranking feedback | 400 arms, k=m=2; two weights equal to 1 and the others equal to 0.05 | Top-k-UIF and RecMaxMinUCB |
+| Ranking feedback | 400 arms, k=m=2; two weights equal to 1, ten equal to 0.9, and 388 equal to 0.05 | Top-k-UIF and RecMaxMinUCB |
 | Feedback level | 16 arms, k=6, m in {1,2,3,6} | Top-k-UIF |
-| MNL feedback | 30 arms, k=5, theta0 in {0.001,0.003,0.01,0.03} | MNL-Top-k-UIF, AOA-RB-PL, and AOA-RB-PL-Adaptive |
+| MNL feedback | 30 arms, k=5, boundary weights 0.80 and 0.79, theta0 in {0.001,0.003,0.01,0.03} | MNL-Top-k-UIF, AOA-RB-PL, and AOA-RB-PL-Adaptive |
+
+The MNL real-arm weights are
+`[1.00,0.95,0.90,0.85,0.80,0.79,0.78,0.77,0.76,0.75,0.50,0.47,0.44,0.41,0.38,0.35,0.32,0.29,0.26,0.23,0.20,0.18,0.16,0.14,0.12,0.10,0.08,0.06,0.04,0.02]`.
+
+`experiment_epsilon_0_2.yml` and `experiment_epsilon_0_05.yml` test the ranking
+instance with ten competitor weights 0.8 and 0.95, respectively. Each contains
+40 runs (two algorithms × 20 repetitions). The main comparison uses weight 0.9.
+The horizon, two optimal weights and 388 weights equal to 0.05 are common to all
+three settings. All three settings are reported in `reference_results/`.
 
 Figures show mean regret with pointwise 95% Student-t confidence intervals over
 the independent trials. The saved aggregate curves, final confidence limits,
 and paper figures are also available in [`reference_results/`](reference_results/).
 Package versions are pinned in `requirements.txt`; source revisions and result
 checksums are recorded in `reference_results/provenance.json`.
+
 
 ## Cite Top-k-UIF
 

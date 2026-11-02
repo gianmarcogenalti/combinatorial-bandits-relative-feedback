@@ -84,7 +84,7 @@ class PaperFigures:
                     "xticklabels={" + ",".join(f"{v:g}" for v in tick_labels) + "}",
                     "scaled y ticks=false",
                     "yticklabel style={/pgf/number format/1000 sep={}}",
-                    "legend style={at={(0.98,0.4)},anchor=east}",
+                    "legend style={at={(0.98,0.2)},anchor=east}",
                 ]
                 series = [
                     (s.labels["algorithm.name"], s.x, s.mean, self._half_width(s))

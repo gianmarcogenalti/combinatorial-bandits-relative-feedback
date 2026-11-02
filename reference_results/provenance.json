@@ -1,33 +1,28 @@
 {
-  "experiment_commit": "9727bbe462a91a0ed7585673c07a3c192bc50c8d",
-  "ews_commit": "4ba0dd60e43e8dabae5b5f879cde01f6765418db",
   "seed": 104729,
   "horizon": 1000000,
   "repetitions_per_setting": 20,
   "independent_runs": 360,
-  "confidence_radius": "sqrt(log(2*n*T/delta)/N)",
-  "delta": 0.05,
-  "points_per_aggregate": 200,
-  "validation": "All 360 runs completed; means and SEM independently recomputed from all 20 retained per-run curves for every aggregate.",
-  "files": {
-    "figures/cumulative_regret.tikz": "2441894d033ddc366588dc98d3dbdb8a0dd701042d93543b88b67b2c867e888e",
-    "figures/final_regret_vs_m.tikz": "29020de4256195232a95afe6af0a9959191c89ffcc0e947f4ed9a88ce3fdec2e",
-    "figures/final_regret_vs_theta0.tikz": "9a4c0ef5c000e3cfd00edecd3940837e5be02d8f5b24bc1553a8a0e23efd34ac",
-    "final_regret.csv": "482d6414c0564707b6637b5cd9c2421c3d7f5465c4d546ec0c90f152b7df9ef2",
-    "regret.csv": "2024f10a23e9f691dff4ed390be0fe1e2b8a0e9794852b32c02468a2e01977e1"
-  },
-  "experiment_config_sha256": "0eac4648abc1c1481a64e914e878920189a565809ab5c8c18c0821592558bd4d",
-  "requirements_sha256": "f27421bdea6d93502c0933b9ceb138cbfda6a7db9f8e567dc64e1391029fa805",
-  "csv_serialization": "LF line endings; original EWS mean/SEM fields retained; final_regret.csv includes ci95_lower and ci95_upper.",
-  "figure_exporter_sha256": "2c858adef71e27fa5e6beacff8a78f70e7190c281bdbf5583dd52f3454c0a54a",
-  "figure_formatting": "Native PGFPlots fragments with common axis geometry and compact legends.",
-  "simulation_config_sha256": "5aee072615a1617638e3aa9715809866ad8ab85acec3d3bf7c08cb267defe716",
-  "simulation_requirements_sha256": "dfa8b465f9ab4e7df5ebfe126a6dacf575543fd5cc99cfba7c1167558582f534",
-  "aggregate_uncertainty": "sample standard deviation / sqrt(20)",
-  "plotted_uncertainty": "Pointwise 95% Student-t confidence intervals for the mean",
+  "verified_aggregate_points": 3600,
+  "ews_commit": "4ba0dd60e43e8dabae5b5f879cde01f6765418db",
+  "validation": "All requested per-run metric checksums, completion states, repetition identities, means and sample SEM recomputed and checked.",
   "confidence_level": 0.95,
-  "confidence_interval_formula": "mean +/- t.ppf(0.975, count-1) * SEM",
-  "student_t_critical_value": 2.093024054408263,
-  "scipy_version": "1.13.1",
-  "figure_export_commit": "603625b0653c7e9d6854549d2e9fabd3c124b56c"
+  "confidence_interval_formula": "mean +/- t.ppf(.975, count-1) * SEM",
+  "resolved_config_sha256": "29422abf603119eef10e7328eb8c15a28be4e070717691df3ff5f52828afcb4b",
+  "csv_serialization": "LF line endings; numeric fields preserved verbatim",
+  "source_modules_sha256": {
+    "experiment_code/__init__.py": "1c2ade5969cbd0d2fb13f746d330098549e5546f72750dd83dbfbc8f7b2f50d6",
+    "experiment_code/algorithms.py": "bce0bca3c21b8f8347b6cdede09bc301db5bd79513e789509d829d5bd0a680d9",
+    "experiment_code/data.py": "5b02652920b287430583c20eeb836dc8339cc862752ad57503ab26870e39d472",
+    "experiment_code/figures.py": "38ed6151a56bd48dc54cf6a222fc39237a5121c19d403a9f3c08a18911af17eb",
+    "experiment_code/metrics.py": "1be23669721127e79238116ce97f72aa28f0b1bf47189ab134e68653c404c2ad",
+    "experiment_code/recmaxmin.py": "d25fb9508eb06f6eea07b66db0f33f36d61b0bb635a5f9f372894777c56e7e05"
+  },
+  "files": {
+    "figures/cumulative_regret.tikz": "64635a84619f3da18427ef4daec501c831eaf34d0334fb1ac243320f2c2128ab",
+    "figures/final_regret_vs_m.tikz": "29020de4256195232a95afe6af0a9959191c89ffcc0e947f4ed9a88ce3fdec2e",
+    "figures/final_regret_vs_theta0.tikz": "77c3ca4b438bb5f31645a2838280efc620ba2bc6b1e4ba674f63e89a6aeafeb5",
+    "final_regret.csv": "71a11bf57049df65c74753fd8b9d7e71ab7c35a239f378f47f72dd1327710529",
+    "regret.csv": "b2cc396a9bf4da58661922de77ef94faf44dc0a06c6734f4bd92cb8dcf358ac4"
+  }
 }

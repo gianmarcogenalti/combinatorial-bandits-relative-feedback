@@ -88,9 +88,7 @@ def export(root, destination, repetitions, expected_runs, horizon=1000000):
         writer = csv.DictWriter(stream, keys, lineterminator='\n')
         writer.writeheader(); writer.writerows(final)
     shutil.copytree(root / 'analysis/figures', destination / 'figures', dirs_exist_ok=True)
-    shutil.copy2(root / 'compute/summary.json', destination / 'compute.json')
-    shutil.copy2(root / 'compute/summary.md', destination / 'compute.md')
-    copied = [destination / name for name in ('regret.csv', 'final_regret.csv', 'compute.json', 'compute.md')]
+    copied = [destination / name for name in ('regret.csv', 'final_regret.csv')]
     copied += [destination / 'figures' / p.relative_to(root / 'analysis/figures')
                for p in (root / 'analysis/figures').rglob('*') if p.is_file()]
     for path in copied:
@@ -104,7 +102,6 @@ def export(root, destination, repetitions, expected_runs, horizon=1000000):
         'validation': 'All requested per-run metric checksums, completion states, repetition identities, means and sample SEM recomputed and checked.',
         'confidence_level': .95, 'confidence_interval_formula': 'mean +/- t.ppf(.975, count-1) * SEM',
         'resolved_config_sha256': digest(config_path),
-        'ews_provenance': metadata.get('provenance', {}),
         'csv_serialization': 'LF line endings; numeric fields preserved verbatim',
         'exporter_sha256': digest(Path(__file__)),
         'source_modules_sha256': {str(p): digest(p) for p in sorted(Path('experiment_code').glob('*.py'))},

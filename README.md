@@ -77,7 +77,6 @@ and paper figures are also available in [`reference_results/`](reference_results
 Package versions are pinned in `requirements.txt`; source revisions and result
 checksums are recorded in `reference_results/provenance.json`.
 
-
 ## Cite Top-k-UIF
 
 If you use this code in a scientific publication, please cite:
